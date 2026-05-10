@@ -1,0 +1,32 @@
+[Unit]
+Description=My Personal Cloud (Go server)
+Documentation=https://github.com/DavdJass/my-personal-cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloud
+Group=cloud
+WorkingDirectory=/opt/my-personal-cloud
+
+# Environment file with secrets (CLOUD_JWT_SECRET, CLOUD_ADMIN_USER, etc.)
+EnvironmentFile=-/etc/my-personal-cloud.env
+Environment=CLOUD_ADDR=127.0.0.1:8080
+Environment=CLOUD_STORAGE_ROOT=/mnt/cloud/storage
+Environment=CLOUD_DB_PATH=/mnt/cloud/cloud.db
+
+ExecStart=/opt/my-personal-cloud/my-personal-cloud
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/mnt/cloud
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

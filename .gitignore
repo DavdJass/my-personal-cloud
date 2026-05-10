@@ -1,0 +1,39 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+my-personal-cloud
+my-personal-cloud-server
+
+# Test binary
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories (Node)
+web/node_modules/
+web/dist/
+
+# Local data and uploads
+data/
+storage/
+*.db
+*.db-journal
+
+# Environment / secrets
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

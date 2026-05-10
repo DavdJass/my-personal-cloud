@@ -1,0 +1,60 @@
+# Caddyfile - reverse proxy in front of the Go server.
+#
+# Two common deployment modes:
+#
+#   1) LAN-only with self-signed cert (default below). Replace `cloud.local`
+#      with the hostname you set in /etc/hostname or your router DNS.
+#
+#   2) Public domain + Let's Encrypt (uncomment the second block). You'll
+#      need a real DNS name pointing at the RPi public IP and ports 80/443
+#      forwarded on your router.
+#
+#   3) Tailscale-only: bind to the tailnet IP and use Caddy's tailscale
+#      certificate provider (https://caddyserver.com/docs/automatic-https#tailscale).
+
+{
+	# Global options.
+	# email you@example.com   # required for Let's Encrypt
+	auto_https disable_redirects
+}
+
+# --- LAN access via mDNS / hostname (self-signed) ---
+cloud.local {
+	tls internal
+	encode zstd gzip
+
+	# Cap upload body to match the Go server (10 GiB by default).
+	request_body {
+		max_size 10GB
+	}
+
+	reverse_proxy 127.0.0.1:8080 {
+		# Stream large uploads/downloads without buffering.
+		flush_interval -1
+	}
+}
+
+# --- Public domain with Let's Encrypt (uncomment to use) ---
+# cloud.example.com {
+# 	encode zstd gzip
+# 	request_body {
+# 		max_size 10GB
+# 	}
+# 	reverse_proxy 127.0.0.1:8080 {
+# 		flush_interval -1
+# 	}
+# }
+
+# --- Tailscale tailnet-only (recommended for remote access) ---
+# https://cloud.your-tailnet.ts.net {
+# 	tls {
+# 		get_certificate tailscale
+# 	}
+# 	encode zstd gzip
+# 	request_body {
+# 		max_size 10GB
+# 	}
+# 	reverse_proxy 127.0.0.1:8080 {
+# 		flush_interval -1
+# 	}
+# }
