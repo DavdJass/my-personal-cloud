@@ -1,28 +1,67 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type PhotoEntry } from "../api";
+
+const PAGE_SIZE = 30;
 
 export function GalleryPage() {
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<PhotoEntry | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const pageRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setLoading(true);
-    api
-      .listPhotos()
-      .then((res) => setPhotos(res.photos))
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "Error al cargar fotos")
-      )
-      .finally(() => setLoading(false));
+  const load = useCallback(async (pageNum: number, append: boolean) => {
+    if (!append) setLoading(true);
+    else setLoadingMore(true);
+
+    try {
+      const res = await api.listPhotos(PAGE_SIZE, pageNum * PAGE_SIZE);
+      if (append) {
+        setPhotos((prev) => [...prev, ...res.photos]);
+      } else {
+        setPhotos(res.photos);
+      }
+      setHasMore((pageNum + 1) * PAGE_SIZE < res.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al cargar fotos");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   }, []);
+
+  // Initial load.
+  useEffect(() => {
+    load(0, false);
+  }, [load]);
+
+  // Infinite scroll via IntersectionObserver.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore || loadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          pageRef.current += 1;
+          load(pageRef.current, true);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, load]);
 
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Galería</h2>
-        <div className="muted">{photos.length} fotos</div>
+        <h2>Galer\u00eda</h2>
+        <div className="muted">{photos.length > 0 ? `${photos.length} fotos` : ""}</div>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -33,22 +72,34 @@ export function GalleryPage() {
         <div className="empty">
           <p>No hay fotos en tu nube.</p>
           <p className="muted">
-            Sube imágenes desde la pestaña "Archivos" y aparecerán aquí.
+            Sube im\u00e1genes desde la pesta\u00f1a &ldquo;Archivos&rdquo; y aparecer\u00e1n aqu\u00ed.
           </p>
         </div>
       ) : (
-        <div className="gallery-grid">
-          {photos.map((p) => (
-            <button
-              key={p.id}
-              className="gallery-tile"
-              onClick={() => setActive(p)}
-              title={p.name}
-            >
-              <img src={api.thumbUrl(p.id, 256)} alt={p.name} loading="lazy" />
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="gallery-grid">
+            {photos.map((p) => (
+              <button
+                key={p.id}
+                className="gallery-tile"
+                onClick={() => setActive(p)}
+                title={p.name}
+              >
+                <img
+                  src={api.thumbUrl(p.id, 256)}
+                  alt={p.name}
+                  loading="lazy"
+                />
+              </button>
+            ))}
+          </div>
+
+          {/* Sentinel for infinite scroll */}
+          <div ref={sentinelRef} className="gallery-sentinel">
+            {loadingMore && <div className="spinner" />}
+            {!hasMore && <p className="muted">Todas las fotos cargadas.</p>}
+          </div>
+        </>
       )}
 
       {active && (

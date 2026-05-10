@@ -34,43 +34,83 @@ func Open(path string) (*sql.DB, error) {
 	return conn, nil
 }
 
+var schemaVersion = 1
+
 func migrate(conn *sql.DB) error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id           INTEGER PRIMARY KEY AUTOINCREMENT,
-			username     TEXT    NOT NULL UNIQUE,
-			password_hash TEXT   NOT NULL,
-			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS files (
-			id           TEXT    PRIMARY KEY,
-			user_id      INTEGER NOT NULL,
-			name         TEXT    NOT NULL,
-			parent_path  TEXT    NOT NULL DEFAULT '/',
-			storage_path TEXT    NOT NULL,
-			mime_type    TEXT    NOT NULL,
-			size_bytes   INTEGER NOT NULL,
-			is_image     INTEGER NOT NULL DEFAULT 0,
-			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_files_user_parent ON files(user_id, parent_path)`,
-		`CREATE INDEX IF NOT EXISTS idx_files_user_image ON files(user_id, is_image)`,
-		`CREATE TABLE IF NOT EXISTS folders (
-			id          TEXT    PRIMARY KEY,
-			user_id     INTEGER NOT NULL,
-			name        TEXT    NOT NULL,
-			parent_path TEXT    NOT NULL DEFAULT '/',
-			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_folders_user_parent ON folders(user_id, parent_path)`,
+	// Create schema_version table if not exists.
+	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	for _, s := range stmts {
-		if _, err := conn.Exec(s); err != nil {
-			return fmt.Errorf("migrate: %w\nstatement: %s", err, s)
+	var current int
+	err := conn.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&current)
+	if err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+
+	steps := []struct {
+		version int
+		sql     string
+	}{
+		{
+			version: 1,
+			sql: `
+				CREATE TABLE IF NOT EXISTS users (
+					id           INTEGER PRIMARY KEY AUTOINCREMENT,
+					username     TEXT    NOT NULL UNIQUE,
+					password_hash TEXT   NOT NULL,
+					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+				CREATE TABLE IF NOT EXISTS files (
+					id           TEXT    PRIMARY KEY,
+					user_id      INTEGER NOT NULL,
+					name         TEXT    NOT NULL,
+					parent_path  TEXT    NOT NULL DEFAULT '/',
+					storage_path TEXT    NOT NULL,
+					mime_type    TEXT    NOT NULL,
+					size_bytes   INTEGER NOT NULL,
+					is_image     INTEGER NOT NULL DEFAULT 0,
+					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
+				CREATE INDEX IF NOT EXISTS idx_files_user_parent ON files(user_id, parent_path);
+				CREATE INDEX IF NOT EXISTS idx_files_user_image ON files(user_id, is_image);
+				CREATE TABLE IF NOT EXISTS folders (
+					id          TEXT    PRIMARY KEY,
+					user_id     INTEGER NOT NULL,
+					name        TEXT    NOT NULL,
+					parent_path TEXT    NOT NULL DEFAULT '/',
+					created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
+				CREATE INDEX IF NOT EXISTS idx_folders_user_parent ON folders(user_id, parent_path);
+			`,
+		},
+		{
+			version: 2,
+			sql: `
+				ALTER TABLE files ADD COLUMN deleted_at DATETIME;
+			`,
+		},
+	}
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, step := range steps {
+		if step.version <= current {
+			continue
+		}
+		if _, err := tx.Exec(step.sql); err != nil {
+			return fmt.Errorf("migrate v%d: %w\nstatement: %s", step.version, err, step.sql)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, step.version); err != nil {
+			return fmt.Errorf("record migration v%d: %w", step.version, err)
 		}
 	}
-	return nil
+
+	return tx.Commit()
 }

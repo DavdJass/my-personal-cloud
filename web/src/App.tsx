@@ -3,9 +3,20 @@ import { useAuth } from "./auth";
 import { LoginPage } from "./pages/LoginPage";
 import { FilesPage } from "./pages/FilesPage";
 import { GalleryPage } from "./pages/GalleryPage";
+import { useTheme } from "./theme";
+import { ToastProvider } from "./toast";
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
+  );
+}
+
+function AppInner() {
   const { user, loading, logout } = useAuth();
+  const { toggle, isDark } = useTheme();
 
   if (loading) {
     return (
@@ -40,6 +51,13 @@ export default function App() {
           </NavLink>
         </nav>
         <div className="user-block">
+          <button
+            className="btn btn-ghost btn-sm theme-toggle"
+            onClick={toggle}
+            title={isDark ? "Activar modo claro" : "Activar modo oscuro"}
+          >
+            {isDark ? "\u2600" : "\u{1F319}"}
+          </button>
           <span className="user-name">{user.username}</span>
           <button className="btn btn-ghost" onClick={logout}>
             Salir
