@@ -18,7 +18,11 @@ go.work.sum
 
 # Dependency directories (Node)
 web/node_modules/
-web/dist/
+
+# Vite build output — exclude generated assets but keep the placeholder so
+# `go build` (which uses //go:embed all:dist) succeeds on a fresh clone.
+web/dist/*
+!web/dist/.gitkeep
 
 # Local data and uploads
 data/

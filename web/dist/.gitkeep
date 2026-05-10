@@ -1,0 +1,2 @@
+# Vite build output is generated here by `npm run build`.
+# This placeholder ensures `//go:embed all:dist` succeeds before the first build.
