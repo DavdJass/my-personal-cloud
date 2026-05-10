@@ -1,117 +1,118 @@
 # My Personal Cloud
 
-Tu propia nube personal en Go, ligera y sin dependencias externas, diseñada
-para correr en una **Raspberry Pi 5** y servir tus archivos y fotos a través
-de una interfaz web moderna.
+A self-hosted personal cloud built in Go, lightweight and dependency-free,
+designed to run on a **Raspberry Pi 5** and serve your files and photos through
+a modern web interface.
 
-- Backend: **Go** con `chi`, SQLite (sin CGO), JWT y thumbnails en Go puro.
-- Frontend: **React + Vite + TypeScript**, embebido en el binario Go.
-- Despliegue: un solo binario + `Caddy` (HTTPS automático) + `Tailscale`
-  (acceso remoto sin abrir puertos).
-
----
-
-## Arquitectura
-
-```
-Navegador  --HTTPS-->  Caddy  --HTTP-->  Go server (:8080)  -->  SQLite + disco
-                          ^
-                          |
-                       Tailscale (acceso remoto desde fuera de la LAN)
-```
+- **Backend:** Go with `chi`, SQLite (no CGO), JWT auth and pure-Go thumbnails.
+- **Frontend:** React + Vite + TypeScript, embedded in the Go binary.
+- **Deploy:** single binary + `Caddy` (automatic HTTPS) + `Tailscale` (remote access without opening ports).
 
 ---
 
-## Estructura del repositorio
+## Architecture
+
+```
+Browser  --HTTPS-->  Caddy  --HTTP-->  Go server (:8080)  -->  SQLite + disk
+                       ^
+                       |
+                    Tailscale (remote access from outside the LAN)
+```
+
+---
+
+## Repository layout
 
 ```
 my-personal-cloud/
-  cmd/server/           Entrypoint del servidor
+  cmd/server/           Server entrypoint
   internal/
-    auth/               JWT + login + middleware
-    config/             Carga de configuración
-    db/                 SQLite y migraciones
-    files/              Endpoints de archivos
-    photos/             Galería + thumbnails
-    storage/            Acceso al sistema de archivos
-  web/                  Frontend React (build embebido en el binario)
-  deploy/               Unit file de systemd
-  Caddyfile             Reverse proxy de ejemplo
-  Makefile              Atajos de build
+    auth/               JWT login + middleware
+    config/             Config loading from env vars
+    db/                 SQLite and migrations
+    files/              File and folder endpoints
+    photos/             Gallery + thumbnail generation
+    storage/            Local filesystem abstraction
+  web/                  React frontend (build embedded in binary)
+  deploy/               systemd unit file
+  Caddyfile             Example reverse proxy config
+  Makefile              Build shortcuts
 ```
 
 ---
 
-## Desarrollo local
+## Local development
 
-Requisitos: **Go 1.22+** y **Node 20+**.
+Requirements: **Go 1.22+** and **Node 20+**.
 
 ```bash
-# 1. Instalar dependencias
+# 1. Install dependencies
 go mod tidy
 cd web && npm install && cd ..
 
-# 2. Crear un usuario admin de prueba
+# 2. Bootstrap an admin user
 export CLOUD_ADMIN_USER=admin
 export CLOUD_ADMIN_PASS=admin
 
-# 3. (Opcional) Fijar un secreto JWT estable
-export CLOUD_JWT_SECRET="cambia-esto-en-produccion"
+# 3. (Optional) Set a stable JWT secret
+export CLOUD_JWT_SECRET="change-this-in-production"
 
-# 4. Arrancar el backend (puerto 8080)
+# 4. Start the backend (port 8080)
 go run ./cmd/server
 ```
 
-En otra terminal, arranca el frontend con hot-reload:
+In a second terminal, start the frontend with hot-reload:
 
 ```bash
 cd web
-m   # http://localhost:5173 (proxy de /api a :8080)
+npm run dev   # http://localhost:5173 (proxies /api to :8080)
 ```
 
-Para construir un binario "todo en uno" con el frontend embebido:
+To build a single self-contained binary with the frontend embedded:
 
 ```bash
-make build    # produce ./my-personal-cloud
+make build    # produces ./my-personal-cloud
 ./my-personal-cloud
-# abre http://localhost:8080
+# open http://localhost:8080
 ```
 
----
-
-## Variables de entorno
-
-| Variable                | Default                  | Descripción                                |
-| ----------------------- | ------------------------ | ------------------------------------------ |
-| `CLOUD_ADDR`            | `:8080`                  | Dirección/puerto del servidor              |
-| `CLOUD_STORAGE_ROOT`    | `./data/storage`         | Directorio donde se guardan los archivos   |
-| `CLOUD_DB_PATH`         | `./data/cloud.db`        | Ruta del archivo SQLite                    |
-| `CLOUD_JWT_SECRET`      | (aleatorio al arrancar)  | Clave HMAC para firmar JWT (256 bits+)     |
-| `CLOUD_JWT_EXPIRY_HOURS`| `24`                     | Horas de validez del token                 |
-| `CLOUD_MAX_UPLOAD_MB`   | `10240` (10 GiB)         | Tamaño máximo de subida                    |
-| `CLOUD_CORS_ORIGIN`     | `*`                      | Origen permitido por CORS                  |
-| `CLOUD_ADMIN_USER`      | (vacío)                  | Si se define junto con `_PASS`, crea el usuario al arrancar |
-| `CLOUD_ADMIN_PASS`      | (vacío)                  | Contraseña del admin de bootstrap          |
+> **Windows note:** use `$env:CLOUD_ADMIN_USER = "admin"` instead of `export`.
 
 ---
 
-## Despliegue en Raspberry Pi 5
+## Environment variables
 
-### 1. Compilación cruzada (desde tu máquina)
+| Variable                | Default                   | Description                                          |
+| ----------------------- | ------------------------- | ---------------------------------------------------- |
+| `CLOUD_ADDR`            | `:8080`                   | TCP address the server listens on                    |
+| `CLOUD_STORAGE_ROOT`    | `./data/storage`          | Directory where uploaded files are stored            |
+| `CLOUD_DB_PATH`         | `./data/cloud.db`         | Path to the SQLite database file                     |
+| `CLOUD_JWT_SECRET`      | (random on each startup)  | HMAC key used to sign JWTs — set this in production  |
+| `CLOUD_JWT_EXPIRY_HOURS`| `24`                      | Token validity in hours                              |
+| `CLOUD_MAX_UPLOAD_MB`   | `10240` (10 GiB)          | Maximum size accepted for a single upload            |
+| `CLOUD_CORS_ORIGIN`     | `*`                       | Allowed CORS origin                                  |
+| `CLOUD_ADMIN_USER`      | (empty)                   | If set together with `_PASS`, creates the user on startup |
+| `CLOUD_ADMIN_PASS`      | (empty)                   | Password for the bootstrap admin account             |
+
+---
+
+## Deploying on Raspberry Pi 5
+
+### 1. Cross-compile from your machine
 
 ```bash
 make build-pi
-# Genera ./my-personal-cloud-arm64
+# produces ./my-personal-cloud-arm64
 ```
 
-### 2. Copia al RPi
+### 2. Copy to the Pi
 
 ```bash
 scp my-personal-cloud-arm64 pi@raspberrypi.local:/tmp/
 scp Caddyfile deploy/my-personal-cloud.service pi@raspberrypi.local:/tmp/
 ```
 
-### 3. Instalación en el RPi (SSH)
+### 3. Install on the Pi (via SSH)
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin cloud
@@ -120,22 +121,22 @@ sudo mv /tmp/my-personal-cloud-arm64 /opt/my-personal-cloud/my-personal-cloud
 sudo chown -R cloud:cloud /opt/my-personal-cloud /mnt/cloud
 sudo chmod +x /opt/my-personal-cloud/my-personal-cloud
 
-# Variables de entorno (secretos)
+# Secrets file
 sudo tee /etc/my-personal-cloud.env >/dev/null <<EOF
 CLOUD_JWT_SECRET=$(openssl rand -hex 32)
-CLOUD_ADMIN_USER=tu_usuario
-CLOUD_ADMIN_PASS=una_password_fuerte
+CLOUD_ADMIN_USER=your_username
+CLOUD_ADMIN_PASS=a_strong_password
 EOF
 sudo chmod 600 /etc/my-personal-cloud.env
 
-# Servicio systemd
+# Enable systemd service
 sudo mv /tmp/my-personal-cloud.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now my-personal-cloud
 sudo systemctl status my-personal-cloud
 ```
 
-### 4. Caddy (HTTPS automático)
+### 4. Caddy (automatic HTTPS)
 
 ```bash
 sudo apt install -y caddy
@@ -143,28 +144,27 @@ sudo mv /tmp/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 ```
 
-Por defecto el `Caddyfile` sirve en `https://cloud.local` con un certificado
-auto-firmado. Para un dominio público edita el bloque `cloud.example.com` y
-asegúrate de tener los puertos 80/443 abiertos.
+By default the `Caddyfile` serves on `https://cloud.local` with a self-signed
+certificate. For a public domain, uncomment the `cloud.example.com` block and
+ensure ports 80/443 are forwarded on your router.
 
-### 5. Acceso remoto con Tailscale (recomendado)
+### 5. Remote access with Tailscale (recommended)
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
-sudo tailscale cert  # opcional: emite cert para tu hostname.tailnet.ts.net
+sudo tailscale cert  # optional: issues a cert for <host>.<tailnet>.ts.net
 ```
 
-Después instala Tailscale en tu teléfono o portátil y accede al RPi por su
-IP `100.x.y.z` o por su nombre `<host>.<tailnet>.ts.net`. **Sin abrir puertos
-en el router.**
+Install Tailscale on your phone or laptop and access the Pi by its Tailscale IP
+`100.x.y.z` or hostname `<host>.<tailnet>.ts.net`. **No router port-forwarding needed.**
 
 ---
 
-## Almacenamiento
+## Storage
 
-Recomendado: monta un disco USB externo en `/mnt/cloud` y deja la SD card
-solo para el sistema. Ejemplo de `/etc/fstab`:
+Recommended: mount a USB external drive at `/mnt/cloud` and leave the SD card
+for the OS only. Example `/etc/fstab` entry:
 
 ```
 UUID=xxxx-xxxx  /mnt/cloud  ext4  defaults,noatime,nofail  0  2
@@ -172,25 +172,30 @@ UUID=xxxx-xxxx  /mnt/cloud  ext4  defaults,noatime,nofail  0  2
 
 ---
 
-## API REST
+## REST API
 
-Todas las rutas viven bajo `/api`. Las rutas protegidas requieren un header
-`Authorization: Bearer <jwt>` (o `?token=<jwt>` para descargas e `<img>`).
+All routes live under `/api`. Protected routes require an
+`Authorization: Bearer <jwt>` header (or `?token=<jwt>` as a query parameter
+for downloads and `<img>` tags).
 
-| Método | Ruta                          | Descripción                  |
-|--------|-------------------------------|------------------------------|
-| GET    | `/api/health`                 | Health check                 |
-| POST   | `/api/auth/login`             | Login → JWT                  |
-| GET    | `/api/auth/me`                | Usuario actual               |
-| GET    | `/api/files?path=/`           | Listar archivos              |
-| POST   | `/api/files/upload`           | Subir (multipart `file`)     |
-| GET    | `/api/files/{id}/download`    | Descargar                    |
-| DELETE | `/api/files/{id}`             | Eliminar                     |
-| GET    | `/api/photos`                 | Listar fotos                 |
-| GET    | `/api/photos/{id}/thumb`      | Thumbnail JPEG (param `size`)|
-| GET    | `/api/photos/{id}/full`       | Imagen original              |
+| Method | Route                         | Description                       |
+|--------|-------------------------------|-----------------------------------|
+| GET    | `/api/health`                 | Health check                      |
+| POST   | `/api/auth/login`             | Login — returns a JWT             |
+| GET    | `/api/auth/me`                | Current authenticated user        |
+| GET    | `/api/files?path=/`           | List files and folders            |
+| POST   | `/api/files/upload`           | Upload file (multipart `file`)    |
+| GET    | `/api/files/{id}/download`    | Download file                     |
+| PATCH  | `/api/files/{id}`             | Rename / move file                |
+| DELETE | `/api/files/{id}`             | Delete file                       |
+| POST   | `/api/folders`                | Create folder                     |
+| PATCH  | `/api/folders/{id}`           | Rename / move folder (cascades)   |
+| DELETE | `/api/folders/{id}`           | Delete folder and all contents    |
+| GET    | `/api/photos`                 | List photos                       |
+| GET    | `/api/photos/{id}/thumb`      | JPEG thumbnail (param `size`)     |
+| GET    | `/api/photos/{id}/full`       | Full-resolution image             |
 
-Ejemplo de login:
+Login example:
 
 ```bash
 curl -s http://localhost:8080/api/auth/login \
@@ -200,16 +205,16 @@ curl -s http://localhost:8080/api/auth/login \
 
 ---
 
-## Roadmap (ideas para extender)
+## Roadmap
 
-- Soporte multi-usuario completo desde la UI (no solo bootstrap por env).
-- Carpetas anidadas y mover/renombrar archivos.
-- Compartir archivos vía link público temporal.
-- Sincronización tipo Dropbox con un cliente CLI.
-- Etiquetas y búsqueda full-text en SQLite (FTS5).
+- Full multi-user management from the UI (not just env-var bootstrap).
+- Public share links with optional expiration.
+- Dropbox-style sync with a CLI client.
+- Full-text search using SQLite FTS5.
+- Login rate limiting to block brute-force attempts.
 
 ---
 
-## Licencia
+## License
 
 MIT.
