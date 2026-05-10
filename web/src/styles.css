@@ -487,6 +487,106 @@ a {
 .lightbox-close:hover { background: rgba(255,255,255,0.18); }
 
 /* === Responsive === */
+/* === AI search === */
+.ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.ai-toggle:hover { color: var(--text); }
+.ai-toggle input { margin: 0; cursor: pointer; }
+
+.ai-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+.search-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.search-input {
+  flex: 1;
+  padding: 12px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 120ms;
+}
+.search-input:focus { border-color: var(--accent); }
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.search-result {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 120ms, transform 120ms;
+}
+.search-result:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.result-icon { font-size: 28px; }
+.result-info { min-width: 0; }
+.result-name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-path, .result-mime {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-score {
+  text-align: center;
+  min-width: 70px;
+}
+.score-value {
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--accent);
+}
+.score-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.result-actions { display: flex; gap: 6px; }
+
+/* === Responsive === */
 @media (max-width: 720px) {
   .app-header { gap: 12px; padding: 10px 14px; }
   .app-nav { gap: 2px; }
@@ -501,4 +601,9 @@ a {
     display: none;
   }
   .file-head { display: none; }
+  .search-result {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+  }
+  .result-actions { grid-column: 1 / -1; justify-content: flex-end; }
 }

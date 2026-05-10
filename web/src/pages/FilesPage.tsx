@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, formatSize, type FileEntry, type FolderEntry } from "../api";
+import { useAI } from "../aiContext";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ type MoveTarget =
   | { kind: "folder"; id: string; name: string; parentPath: string };
 
 export function FilesPage() {
+  const ai = useAI();
   const [currentPath, setCurrentPath] = useState("/");
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -125,6 +127,9 @@ export function FilesPage() {
   const [uploading, setUploading] = useState(false);
   const [renaming, setRenaming] = useState<RenameTarget | null>(null);
   const [moving, setMoving] = useState<MoveTarget | null>(null);
+  // Opt-in: when checked, every file uploaded in this session also gets
+  // sent to the embeddings API for semantic search indexing.
+  const [aiOptIn, setAiOptIn] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async (p: string) => {
@@ -158,7 +163,16 @@ export function FilesPage() {
     setError(null);
     try {
       for (const file of Array.from(list)) {
-        await api.uploadFile(file, currentPath);
+        const uploaded = await api.uploadFile(file, currentPath);
+        // AI indexing is best-effort: a failure here never fails the upload.
+        // The file is already saved by the time we get here.
+        if (aiOptIn && ai?.enabled) {
+          try {
+            await api.aiIndex(uploaded.id);
+          } catch (e) {
+            console.warn("AI index failed for", uploaded.name, e);
+          }
+        }
       }
       await refresh(currentPath);
     } catch (err) {
@@ -166,6 +180,20 @@ export function FilesPage() {
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  // ── toggle AI index on existing file ──
+  async function onToggleIndex(file: FileEntry) {
+    try {
+      if (file.ai_indexed) {
+        await api.aiRemoveIndex(file.id);
+      } else {
+        await api.aiIndex(file.id);
+      }
+      await refresh(currentPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al actualizar índice IA");
     }
   }
 
@@ -251,6 +279,16 @@ export function FilesPage() {
       <div className="page-header">
         <h2>Archivos</h2>
         <div className="actions">
+          {ai?.enabled && (
+            <label className="ai-toggle" title="Si está marcado, los archivos que subas se indexarán para la búsqueda con IA">
+              <input
+                type="checkbox"
+                checked={aiOptIn}
+                onChange={(e) => setAiOptIn(e.target.checked)}
+              />
+              <span>Habilitar búsqueda IA</span>
+            </label>
+          )}
           <button className="btn btn-ghost" onClick={onNewFolder}>
             + Carpeta
           </button>
@@ -377,6 +415,11 @@ export function FilesPage() {
                 ) : (
                   <span>{f.name}</span>
                 )}
+                {f.ai_indexed && (
+                  <span className="ai-badge" title="Indexado para búsqueda con IA">
+                    AI
+                  </span>
+                )}
               </div>
               <div className="muted file-mime">{f.mime_type}</div>
               <div>{formatSize(f.size_bytes)}</div>
@@ -392,6 +435,19 @@ export function FilesPage() {
                 >
                   Descargar
                 </a>
+                {ai?.enabled && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => onToggleIndex(f)}
+                    title={
+                      f.ai_indexed
+                        ? "Quitar de la búsqueda con IA"
+                        : "Indexar para búsqueda con IA"
+                    }
+                  >
+                    {f.ai_indexed ? "Des-indexar" : "Indexar IA"}
+                  </button>
+                )}
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() =>

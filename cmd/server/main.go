@@ -16,6 +16,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/DavdJass/my-personal-cloud/internal/ai"
 	"github.com/DavdJass/my-personal-cloud/internal/auth"
 	"github.com/DavdJass/my-personal-cloud/internal/config"
 	"github.com/DavdJass/my-personal-cloud/internal/db"
@@ -56,6 +57,19 @@ func main() {
 		log.Fatalf("photos: %v", err)
 	}
 
+	// AI module is fully opt-in. Without DEEPSEEK_API_KEY set, the cloud runs
+	// exactly as before — the AI routes simply aren't registered and the
+	// frontend's /api/ai/status reports enabled=false.
+	var aiSvc *ai.Service
+	aiKey := os.Getenv("DEEPSEEK_API_KEY")
+	if aiKey != "" {
+		client := ai.NewClient(aiKey, os.Getenv("DEEPSEEK_BASE_URL"), os.Getenv("DEEPSEEK_EMBED_MODEL"))
+		aiSvc = ai.NewService(conn, store, client)
+		log.Printf("AI search enabled (model: %s)", aiSvc.Model())
+	} else {
+		log.Printf("AI search disabled (set DEEPSEEK_API_KEY to enable)")
+	}
+
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
@@ -69,15 +83,22 @@ func main() {
 		MaxAge:           300,
 	}))
 
-	r.Route("/api", func(api chi.Router) {
-		api.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.Route("/api", func(apiR chi.Router) {
+		apiR.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		})
 
-		api.Post("/auth/login", authSvc.LoginHandler)
+		apiR.Post("/auth/login", authSvc.LoginHandler)
 
-		api.Group(func(protected chi.Router) {
+		// Public AI status: tells the frontend whether to render search UI.
+		aiModel := ""
+		if aiSvc != nil {
+			aiModel = aiSvc.Model()
+		}
+		apiR.Get("/ai/status", ai.StatusHandler(aiSvc != nil, aiModel))
+
+		apiR.Group(func(protected chi.Router) {
 			protected.Use(authSvc.Middleware)
 
 			protected.Get("/auth/me", authSvc.MeHandler)
@@ -95,6 +116,15 @@ func main() {
 			protected.Get("/photos", photoSvc.ListHandler)
 			protected.Get("/photos/{id}/thumb", photoSvc.ThumbHandler)
 			protected.Get("/photos/{id}/full", photoSvc.FullHandler)
+
+			// Only registered when AI is configured. Frontend hides these
+			// actions behind /api/ai/status, but the routes simply 404 if
+			// the user hits them directly without a key configured.
+			if aiSvc != nil {
+				protected.Post("/ai/index/{id}", aiSvc.IndexHandler)
+				protected.Delete("/ai/index/{id}", aiSvc.RemoveIndexHandler)
+				protected.Get("/ai/search", aiSvc.SearchHandler)
+			}
 		})
 	})
 

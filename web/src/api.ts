@@ -69,7 +69,22 @@ export interface FileEntry {
   mime_type: string;
   size_bytes: number;
   is_image: boolean;
+  ai_indexed: boolean;
   created_at: string;
+}
+
+export interface AIStatus {
+  enabled: boolean;
+  model: string;
+}
+
+export interface AISearchResult {
+  file_id: string;
+  name: string;
+  parent_path: string;
+  mime_type: string;
+  is_image: boolean;
+  score: number;
 }
 
 export interface FolderEntry {
@@ -152,6 +167,22 @@ export const api = {
     const token = getToken() ?? "";
     return `/api/photos/${id}/full?token=${encodeURIComponent(token)}`;
   },
+
+  aiStatus: () => request<AIStatus>("/api/ai/status"),
+
+  aiIndex: (id: string) =>
+    request<{ file_id: string; description: string; dimensions: number }>(
+      `/api/ai/index/${id}`,
+      { method: "POST" }
+    ),
+
+  aiRemoveIndex: (id: string) =>
+    request<void>(`/api/ai/index/${id}`, { method: "DELETE" }),
+
+  aiSearch: (q: string, limit = 20) =>
+    request<{ query: string; count: number; results: AISearchResult[] }>(
+      `/api/ai/search?q=${encodeURIComponent(q)}&limit=${limit}`
+    ),
 };
 
 export function formatSize(bytes: number): string {

@@ -1,11 +1,14 @@
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import { useAI } from "./aiContext";
 import { LoginPage } from "./pages/LoginPage";
 import { FilesPage } from "./pages/FilesPage";
 import { GalleryPage } from "./pages/GalleryPage";
+import { SearchPage } from "./pages/SearchPage";
 
 export default function App() {
   const { user, loading, logout } = useAuth();
+  const ai = useAI();
 
   if (loading) {
     return (
@@ -38,6 +41,11 @@ export default function App() {
           <NavLink to="/gallery" className={({ isActive }) => (isActive ? "active" : "")}>
             Galería
           </NavLink>
+          {ai?.enabled && (
+            <NavLink to="/search" className={({ isActive }) => (isActive ? "active" : "")}>
+              Buscar IA
+            </NavLink>
+          )}
         </nav>
         <div className="user-block">
           <span className="user-name">{user.username}</span>
@@ -50,6 +58,7 @@ export default function App() {
         <Routes>
           <Route path="/files" element={<FilesPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="*" element={<Navigate to="/files" replace />} />
         </Routes>
       </main>

@@ -26,6 +26,7 @@ type File struct {
 	MimeType   string    `json:"mime_type"`
 	SizeBytes  int64     `json:"size_bytes"`
 	IsImage    bool      `json:"is_image"`
+	AIIndexed  bool      `json:"ai_indexed"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -70,7 +71,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.db.QueryContext(r.Context(),
-		`SELECT id, name, parent_path, mime_type, size_bytes, is_image, created_at
+		`SELECT id, name, parent_path, mime_type, size_bytes, is_image, ai_indexed, created_at
 		   FROM files
 		  WHERE user_id = ? AND parent_path = ?
 		  ORDER BY name COLLATE NOCASE`,
@@ -85,14 +86,15 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 	outFiles := []File{}
 	for rows.Next() {
 		var (
-			f       File
-			isImage int
+			f                  File
+			isImage, aiIndexed int
 		)
-		if err := rows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.MimeType, &f.SizeBytes, &isImage, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.MimeType, &f.SizeBytes, &isImage, &aiIndexed, &f.CreatedAt); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
 		f.IsImage = isImage == 1
+		f.AIIndexed = aiIndexed == 1
 		outFiles = append(outFiles, f)
 	}
 
@@ -250,12 +252,12 @@ func (s *Service) PatchFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Load current values.
 	var cur File
-	var isImage int
+	var isImage, aiIndexed int
 	err := s.db.QueryRowContext(r.Context(),
-		`SELECT id, name, parent_path, mime_type, size_bytes, is_image, created_at
+		`SELECT id, name, parent_path, mime_type, size_bytes, is_image, ai_indexed, created_at
 		   FROM files WHERE id = ? AND user_id = ?`,
 		id, user.ID,
-	).Scan(&cur.ID, &cur.Name, &cur.ParentPath, &cur.MimeType, &cur.SizeBytes, &isImage, &cur.CreatedAt)
+	).Scan(&cur.ID, &cur.Name, &cur.ParentPath, &cur.MimeType, &cur.SizeBytes, &isImage, &aiIndexed, &cur.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSONError(w, http.StatusNotFound, "file not found")
 		return
@@ -265,6 +267,7 @@ func (s *Service) PatchFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur.IsImage = isImage == 1
+	cur.AIIndexed = aiIndexed == 1
 
 	newName := cur.Name
 	newParent := cur.ParentPath
