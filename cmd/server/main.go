@@ -63,7 +63,7 @@ func main() {
 	r.Use(chimw.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{cfg.AllowOrigin},
-		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -85,7 +85,12 @@ func main() {
 			protected.Get("/files", fileSvc.ListHandler)
 			protected.Post("/files/upload", fileSvc.UploadHandler)
 			protected.Get("/files/{id}/download", fileSvc.DownloadHandler)
+			protected.Patch("/files/{id}", fileSvc.PatchFileHandler)
 			protected.Delete("/files/{id}", fileSvc.DeleteHandler)
+
+			protected.Post("/folders", fileSvc.CreateFolderHandler)
+			protected.Patch("/folders/{id}", fileSvc.PatchFolderHandler)
+			protected.Delete("/folders/{id}", fileSvc.DeleteFolderHandler)
 
 			protected.Get("/photos", photoSvc.ListHandler)
 			protected.Get("/photos/{id}/thumb", photoSvc.ThumbHandler)

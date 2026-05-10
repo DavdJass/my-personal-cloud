@@ -56,6 +56,15 @@ func migrate(conn *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_files_user_parent ON files(user_id, parent_path)`,
 		`CREATE INDEX IF NOT EXISTS idx_files_user_image ON files(user_id, is_image)`,
+		`CREATE TABLE IF NOT EXISTS folders (
+			id          TEXT    PRIMARY KEY,
+			user_id     INTEGER NOT NULL,
+			name        TEXT    NOT NULL,
+			parent_path TEXT    NOT NULL DEFAULT '/',
+			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_folders_user_parent ON folders(user_id, parent_path)`,
 	}
 
 	for _, s := range stmts {

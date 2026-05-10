@@ -72,6 +72,13 @@ export interface FileEntry {
   created_at: string;
 }
 
+export interface FolderEntry {
+  id: string;
+  name: string;
+  parent_path: string;
+  created_at: string;
+}
+
 export interface PhotoEntry {
   id: string;
   name: string;
@@ -90,7 +97,7 @@ export const api = {
   me: () => request<User>("/api/auth/me"),
 
   listFiles: (path = "/") =>
-    request<{ path: string; files: FileEntry[] }>(
+    request<{ path: string; folders: FolderEntry[]; files: FileEntry[] }>(
       `/api/files?path=${encodeURIComponent(path)}`
     ),
 
@@ -104,6 +111,12 @@ export const api = {
     });
   },
 
+  patchFile: (id: string, patch: { name?: string; parent_path?: string }) =>
+    request<FileEntry>(`/api/files/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
   deleteFile: (id: string) =>
     request<void>(`/api/files/${id}`, { method: "DELETE" }),
 
@@ -111,6 +124,21 @@ export const api = {
     const token = getToken() ?? "";
     return `/api/files/${id}/download?token=${encodeURIComponent(token)}`;
   },
+
+  createFolder: (name: string, parentPath = "/") =>
+    request<FolderEntry>("/api/folders", {
+      method: "POST",
+      body: JSON.stringify({ name, parent_path: parentPath }),
+    }),
+
+  patchFolder: (id: string, patch: { name?: string; parent_path?: string }) =>
+    request<FolderEntry>(`/api/folders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  deleteFolder: (id: string) =>
+    request<void>(`/api/folders/${id}`, { method: "DELETE" }),
 
   listPhotos: () =>
     request<{ photos: PhotoEntry[] }>("/api/photos"),

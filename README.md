@@ -66,7 +66,7 @@ En otra terminal, arranca el frontend con hot-reload:
 
 ```bash
 cd web
-npm run dev   # http://localhost:5173 (proxy de /api a :8080)
+m   # http://localhost:5173 (proxy de /api a :8080)
 ```
 
 Para construir un binario "todo en uno" con el frontend embebido:
