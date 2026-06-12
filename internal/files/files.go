@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"path"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/DavdJass/my-personal-cloud/internal/auth"
+	"github.com/DavdJass/my-personal-cloud/internal/logger"
 	"github.com/DavdJass/my-personal-cloud/internal/mime"
 	"github.com/DavdJass/my-personal-cloud/internal/storage"
 )
@@ -47,12 +47,11 @@ type Service struct {
 	db             *sql.DB
 	store          *storage.LocalStore
 	maxUploadBytes int64
-	logger         *slog.Logger
 }
 
 // NewService wires the dependencies needed by the file handlers.
 func NewService(db *sql.DB, store *storage.LocalStore, maxUploadBytes int64) *Service {
-	return &Service{db: db, store: store, maxUploadBytes: maxUploadBytes, logger: slog.Default()}
+	return &Service{db: db, store: store, maxUploadBytes: maxUploadBytes}
 }
 
 // ── LIST (with pagination) ─────────────────────────────────────────────────────
@@ -70,7 +69,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	folders, err := s.listFolders(r, user.ID, parent, limit, offset)
 	if err != nil {
-		s.logger.Error("list folders failed", "error", err)
+		logger.Error("list folders failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list folders failed")
 		return
 	}
@@ -84,7 +83,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, parent, limit, offset,
 	)
 	if err != nil {
-		s.logger.Error("list files failed", "error", err)
+		logger.Error("list files failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list files failed")
 		return
 	}
@@ -97,7 +96,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 			isImage int
 		)
 		if err := rows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.MimeType, &f.SizeBytes, &isImage, &f.CreatedAt); err != nil {
-			s.logger.Error("scan file failed", "error", err)
+			logger.Error("scan file failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -175,7 +174,7 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, pattern, q, limit, offset,
 	)
 	if err != nil {
-		s.logger.Error("search files failed", "error", err)
+		logger.Error("search files failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
@@ -188,7 +187,7 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 			isImage int
 		)
 		if err := rows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.MimeType, &f.SizeBytes, &isImage, &f.CreatedAt); err != nil {
-			s.logger.Error("scan search result failed", "error", err)
+			logger.Error("scan search result failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -206,7 +205,7 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, pattern, q, limit, offset,
 	)
 	if err != nil {
-		s.logger.Error("search folders failed", "error", err)
+		logger.Error("search folders failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
@@ -216,7 +215,7 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 	for fRows.Next() {
 		var f Folder
 		if err := fRows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.CreatedAt); err != nil {
-			s.logger.Error("scan folder search result failed", "error", err)
+			logger.Error("scan folder search result failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -284,7 +283,7 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		s.logger.Error("duplicate check failed", "error", err)
+		logger.Error("duplicate check failed", "error", err)
 	}
 
 	mimeVal := header.Header.Get("Content-Type")
@@ -294,7 +293,7 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	relPath, size, err := s.store.Save(user.ID, combinedReader)
 	if err != nil {
-		s.logger.Error("save file failed", "error", err)
+		logger.Error("save file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "save failed: "+err.Error())
 		return
 	}
@@ -308,12 +307,12 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		_ = s.store.Delete(relPath)
-		s.logger.Error("insert file metadata failed", "error", err)
+		logger.Error("insert file metadata failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "insert metadata: "+err.Error())
 		return
 	}
 
-	s.logger.Info("file uploaded", "user_id", user.ID, "name", name, "parent", parent, "size", size)
+	logger.Info("file uploaded", "user_id", user.ID, "name", name, "parent", parent, "size", size)
 
 	writeJSON(w, http.StatusCreated, File{
 		ID:         id,
@@ -347,7 +346,7 @@ func (s *Service) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	f, err := s.store.Open(meta.storagePath)
 	if err != nil {
-		s.logger.Error("open file for download failed", "error", err, "storage_path", meta.storagePath)
+		logger.Error("open file for download failed", "error", err, "storage_path", meta.storagePath)
 		writeJSONError(w, http.StatusInternalServerError, "open failed")
 		return
 	}
@@ -402,7 +401,7 @@ func (s *Service) PatchFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.logger.Error("lookup file for patch failed", "error", err)
+		logger.Error("lookup file for patch failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -437,7 +436,7 @@ func (s *Service) PatchFileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
-			s.logger.Error("duplicate check on patch failed", "error", err)
+			logger.Error("duplicate check on patch failed", "error", err)
 		}
 	}
 
@@ -445,7 +444,7 @@ func (s *Service) PatchFileHandler(w http.ResponseWriter, r *http.Request) {
 		`UPDATE files SET name = ?, parent_path = ? WHERE id = ? AND user_id = ?`,
 		newName, newParent, id, user.ID,
 	); err != nil {
-		s.logger.Error("update file failed", "error", err)
+		logger.Error("update file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
@@ -477,14 +476,14 @@ func (s *Service) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		`UPDATE files SET deleted_at = ? WHERE id = ? AND user_id = ?`,
 		now, id, user.ID,
 	); err != nil {
-		s.logger.Error("soft-delete file failed", "error", err)
+		logger.Error("soft-delete file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 
 	_ = s.store.Delete(meta.storagePath)
 
-	s.logger.Info("file soft-deleted", "user_id", user.ID, "file_id", id, "name", meta.name)
+	logger.Info("file soft-deleted", "user_id", user.ID, "file_id", id, "name", meta.name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -502,7 +501,7 @@ func (s *Service) RestoreHandler(w http.ResponseWriter, r *http.Request) {
 		id, user.ID,
 	)
 	if err != nil {
-		s.logger.Error("restore file failed", "error", err)
+		logger.Error("restore file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
@@ -512,7 +511,7 @@ func (s *Service) RestoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info("file restored", "user_id", user.ID, "file_id", id)
+	logger.Info("file restored", "user_id", user.ID, "file_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -537,7 +536,7 @@ func (s *Service) TrashHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, limit, offset,
 	)
 	if err != nil {
-		s.logger.Error("list trash failed", "error", err)
+		logger.Error("list trash failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list trash failed")
 		return
 	}
@@ -551,7 +550,7 @@ func (s *Service) TrashHandler(w http.ResponseWriter, r *http.Request) {
 			deleted  sql.NullString
 		)
 		if err := rows.Scan(&f.ID, &f.Name, &f.ParentPath, &f.MimeType, &f.SizeBytes, &isImage, &f.CreatedAt, &deleted); err != nil {
-			s.logger.Error("scan trash file failed", "error", err)
+			logger.Error("scan trash file failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -591,7 +590,7 @@ func (s *Service) EmptyTrashHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID,
 	)
 	if err != nil {
-		s.logger.Error("list trashed files for empty failed", "error", err)
+		logger.Error("list trashed files for empty failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "empty trash failed")
 		return
 	}
@@ -608,7 +607,7 @@ func (s *Service) EmptyTrashHandler(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM files WHERE user_id = ? AND deleted_at IS NOT NULL`,
 		user.ID,
 	); err != nil {
-		s.logger.Error("empty trash delete failed", "error", err)
+		logger.Error("empty trash delete failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "empty trash failed")
 		return
 	}
@@ -617,7 +616,7 @@ func (s *Service) EmptyTrashHandler(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.Delete(p)
 	}
 
-	s.logger.Info("trash emptied", "user_id", user.ID, "files_count", len(paths))
+	logger.Info("trash emptied", "user_id", user.ID, "files_count", len(paths))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -661,7 +660,7 @@ func (s *Service) CreateFolderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		s.logger.Error("duplicate folder check failed", "error", err)
+		logger.Error("duplicate folder check failed", "error", err)
 	}
 
 	id := uuid.NewString()
@@ -671,7 +670,7 @@ func (s *Service) CreateFolderHandler(w http.ResponseWriter, r *http.Request) {
 		id, user.ID, name, parent,
 	)
 	if err != nil {
-		s.logger.Error("create folder failed", "error", err)
+		logger.Error("create folder failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "create folder failed: "+err.Error())
 		return
 	}
@@ -720,7 +719,7 @@ func (s *Service) PatchFolderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.logger.Error("lookup folder for patch failed", "error", err)
+		logger.Error("lookup folder for patch failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -744,7 +743,7 @@ func (s *Service) PatchFolderHandler(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		s.logger.Error("begin tx for folder patch failed", "error", err)
+		logger.Error("begin tx for folder patch failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "begin tx failed")
 		return
 	}
@@ -755,7 +754,7 @@ func (s *Service) PatchFolderHandler(w http.ResponseWriter, r *http.Request) {
 		`UPDATE folders SET name = ?, parent_path = ? WHERE id = ? AND user_id = ?`,
 		newName, newParent, id, user.ID,
 	); err != nil {
-		s.logger.Error("update folder failed", "error", err)
+		logger.Error("update folder failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "update folder failed")
 		return
 	}
@@ -768,7 +767,7 @@ func (s *Service) PatchFolderHandler(w http.ResponseWriter, r *http.Request) {
 			  WHERE user_id = ? AND (parent_path = ? OR parent_path LIKE ?)`,
 			newFull, oldLen+1, user.ID, oldFull, oldFull+"/%",
 		); err != nil {
-			s.logger.Error("cascade file paths failed", "error", err)
+			logger.Error("cascade file paths failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "cascade files failed")
 			return
 		}
@@ -779,14 +778,14 @@ func (s *Service) PatchFolderHandler(w http.ResponseWriter, r *http.Request) {
 			  WHERE user_id = ? AND (parent_path = ? OR parent_path LIKE ?)`,
 			newFull, oldLen+1, user.ID, oldFull, oldFull+"/%",
 		); err != nil {
-			s.logger.Error("cascade folder paths failed", "error", err)
+			logger.Error("cascade folder paths failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "cascade folders failed")
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		s.logger.Error("commit folder patch failed", "error", err)
+		logger.Error("commit folder patch failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
@@ -818,7 +817,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.logger.Error("lookup folder for delete failed", "error", err)
+		logger.Error("lookup folder for delete failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -832,7 +831,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, fullPath, fullPath+"/%",
 	)
 	if err != nil {
-		s.logger.Error("list descendant storage paths failed", "error", err)
+		logger.Error("list descendant storage paths failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list descendants failed")
 		return
 	}
@@ -849,7 +848,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		s.logger.Error("begin tx for folder delete failed", "error", err)
+		logger.Error("begin tx for folder delete failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "begin tx failed")
 		return
 	}
@@ -860,7 +859,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		`UPDATE files SET deleted_at = ? WHERE user_id = ? AND (parent_path = ? OR parent_path LIKE ?)`,
 		now, user.ID, fullPath, fullPath+"/%",
 	); err != nil {
-		s.logger.Error("soft-delete descendant files failed", "error", err)
+		logger.Error("soft-delete descendant files failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "delete descendant files failed")
 		return
 	}
@@ -870,7 +869,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM folders WHERE user_id = ? AND (parent_path = ? OR parent_path LIKE ?)`,
 		user.ID, fullPath, fullPath+"/%",
 	); err != nil {
-		s.logger.Error("delete descendant folders failed", "error", err)
+		logger.Error("delete descendant folders failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "delete descendant folders failed")
 		return
 	}
@@ -880,13 +879,13 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM folders WHERE id = ? AND user_id = ?`,
 		id, user.ID,
 	); err != nil {
-		s.logger.Error("delete folder failed", "error", err)
+		logger.Error("delete folder failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "delete folder failed")
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		s.logger.Error("commit folder delete failed", "error", err)
+		logger.Error("commit folder delete failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
@@ -895,7 +894,7 @@ func (s *Service) DeleteFolderHandler(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.Delete(sp)
 	}
 
-	s.logger.Info("folder soft-deleted", "user_id", user.ID, "folder_id", id, "name", cur.Name)
+	logger.Info("folder soft-deleted", "user_id", user.ID, "folder_id", id, "name", cur.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

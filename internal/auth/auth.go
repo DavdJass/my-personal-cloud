@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/DavdJass/my-personal-cloud/internal/logger"
 )
 
 type ctxKey int
@@ -30,12 +31,11 @@ type Service struct {
 	db     *sql.DB
 	secret []byte
 	expiry time.Duration
-	logger *slog.Logger
 }
 
 // NewService constructs an auth service backed by the given SQLite handle.
 func NewService(db *sql.DB, secret []byte, expiry time.Duration) *Service {
-	return &Service{db: db, secret: secret, expiry: expiry, logger: slog.Default()}
+	return &Service{db: db, secret: secret, expiry: expiry}
 }
 
 // EnsureUser creates a user with the given credentials if it does not yet
@@ -68,7 +68,7 @@ func (s *Service) EnsureUser(ctx context.Context, username, password string) err
 		return fmt.Errorf("insert user: %w", err)
 	}
 
-	s.logger.Info("user created", "username", username)
+	logger.Info("user created", "username", username)
 	return nil
 }
 
@@ -194,12 +194,12 @@ func (s *Service) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.logger.Error("login failed", "error", err)
+		logger.Error("login failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "login failed")
 		return
 	}
 
-	s.logger.Info("login successful", "user_id", user.ID, "username", user.Username)
+	logger.Info("login successful", "user_id", user.ID, "username", user.Username)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":              token,
 		"user": map[string]any{
@@ -277,7 +277,7 @@ func (s *Service) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 
 	newToken, err := s.issueToken(parsedUser.ID, parsedUser.Username)
 	if err != nil {
-		s.logger.Error("refresh token issuance failed", "error", err)
+		logger.Error("refresh token issuance failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "token refresh failed")
 		return
 	}

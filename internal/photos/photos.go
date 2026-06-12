@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +23,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/DavdJass/my-personal-cloud/internal/auth"
+	"github.com/DavdJass/my-personal-cloud/internal/logger"
 	"github.com/DavdJass/my-personal-cloud/internal/storage"
 )
 
@@ -42,7 +42,6 @@ type Service struct {
 	db        *sql.DB
 	store     *storage.LocalStore
 	thumbsDir string
-	logger    *slog.Logger
 
 	// inflight deduplicates concurrent thumbnail generation for the same id.
 	inflight sync.Map // map[string]*sync.Mutex
@@ -54,7 +53,7 @@ func NewService(db *sql.DB, store *storage.LocalStore, storageRoot string) (*Ser
 	if err := os.MkdirAll(thumbsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create thumbs dir: %w", err)
 	}
-	return &Service{db: db, store: store, thumbsDir: thumbsDir, logger: slog.Default()}, nil
+	return &Service{db: db, store: store, thumbsDir: thumbsDir}, nil
 }
 
 // ListHandler handles GET /api/photos?limit=50&offset=0 and returns every
@@ -88,7 +87,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID, limit, offset,
 	)
 	if err != nil {
-		s.logger.Error("list photos failed", "error", err)
+		logger.Error("list photos failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list photos failed")
 		return
 	}
@@ -98,7 +97,7 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p Photo
 		if err := rows.Scan(&p.ID, &p.Name, &p.MimeType, &p.SizeBytes, &p.CreatedAt); err != nil {
-			s.logger.Error("scan photo failed", "error", err)
+			logger.Error("scan photo failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -138,7 +137,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	storagePath, ok, err := s.lookupImage(r, user.ID, id)
 	if err != nil {
-		s.logger.Error("lookup image for thumb failed", "error", err)
+		logger.Error("lookup image for thumb failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -151,7 +150,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := os.Stat(thumbPath); errors.Is(err, os.ErrNotExist) {
 		if err := s.generateThumb(id, storagePath, thumbPath, size); err != nil {
-			s.logger.Error("generate thumbnail failed", "error", err, "photo_id", id)
+			logger.Error("generate thumbnail failed", "error", err, "photo_id", id)
 			writeJSONError(w, http.StatusInternalServerError, "thumb generation failed: "+err.Error())
 			return
 		}
@@ -159,7 +158,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	f, err := os.Open(thumbPath)
 	if err != nil {
-		s.logger.Error("open thumb file failed", "error", err)
+		logger.Error("open thumb file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "open thumb failed")
 		return
 	}
@@ -199,14 +198,14 @@ func (s *Service) FullHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		s.logger.Error("lookup photo for full failed", "error", err)
+		logger.Error("lookup photo for full failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
 
 	f, err := s.store.Open(storagePath)
 	if err != nil {
-		s.logger.Error("open photo file failed", "error", err)
+		logger.Error("open photo file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "open failed")
 		return
 	}
