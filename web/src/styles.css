@@ -498,6 +498,59 @@ a {
   gap: 8px;
 }
 
+/* ── Move modal (folder browser) ── */
+.move-card {
+  max-width: 500px;
+}
+.move-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  min-height: 38px;
+}
+.move-up-btn {
+  font-size: 16px;
+  padding: 2px 8px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.move-folder-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.move-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms;
+}
+.move-folder-item:last-child {
+  border-bottom: none;
+}
+.move-folder-item:hover {
+  background: var(--bg-elev-2);
+}
+.move-folder-item .file-icon {
+  font-size: 18px;
+}
+
 /* === Upload progress bar === */
 .upload-progress-bar {
   background: var(--bg-elev);

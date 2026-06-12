@@ -86,7 +86,7 @@ function CreateFolderModal({ onConfirm, onClose }: CreateFolderModalProps) {
   );
 }
 
-// ── MoveModal ────────────────────────────────────────────────────────────────
+// ── MoveModal (folder browser) ───────────────────────────────────────────────
 
 interface MoveModalProps {
   label: string;
@@ -96,31 +96,94 @@ interface MoveModalProps {
 }
 
 function MoveModal({ label, currentPath, onConfirm, onClose }: MoveModalProps) {
-  const [dest, setDest] = useState(currentPath);
+  const [browsePath, setBrowsePath] = useState(currentPath === "/" ? "/" : currentPath);
+  const [subfolders, setSubfolders] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.listFiles(browsePath, 200, 0).then((res) => {
+      if (!cancelled) {
+        setSubfolders(res.folders ?? []);
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [browsePath]);
+
+  function goUp() {
+    if (browsePath === "/") return;
+    const parent = browsePath.substring(0, browsePath.lastIndexOf("/"));
+    setBrowsePath(parent || "/");
+  }
+
+  function segs(p: string) {
+    const parts = [{ label: "Ra\u00edz", path: "/" }];
+    if (p === "/") return parts;
+    const split = p.replace(/^\//, "").split("/");
+    let acc = "";
+    for (const s of split) {
+      acc += "/" + s;
+      parts.push({ label: s, path: acc });
+    }
+    return parts;
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card move-card" onClick={(e) => e.stopPropagation()}>
         <h3>Mover &ldquo;{label}&rdquo;</h3>
-        <p className="muted">Introduce la ruta de destino:</p>
-        <input
-          className="modal-input"
-          value={dest}
-          onChange={(e) => setDest(e.target.value)}
-          placeholder="/carpeta/destino"
-          autoFocus
-        />
+        <p className="muted">Selecciona la carpeta de destino:</p>
+
+        {/* Breadcrumb / current location */}
+        <nav className="move-breadcrumb">
+          {browsePath !== "/" && (
+            <button className="btn btn-ghost btn-xs move-up-btn" onClick={goUp} title="Subir">
+              {"\u2191"}
+            </button>
+          )}
+          {segs(browsePath).map((s, i) => (
+            <span key={s.path} className="bc-seg">
+              {i > 0 && <span className="bc-sep">/</span>}
+              {i < segs(browsePath).length - 1 ? (
+                <button className="bc-btn" onClick={() => setBrowsePath(s.path)}>{s.label}</button>
+              ) : (
+                <span className="bc-current">{s.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+
+        {/* Folder list */}
+        <div className="move-folder-list">
+          {loading ? (
+            <div className="muted" style={{ padding: "12px" }}>Cargando...</div>
+          ) : subfolders.length === 0 ? (
+            <div className="muted" style={{ padding: "12px" }}>No hay subcarpetas</div>
+          ) : (
+            subfolders.map((f) => (
+              <button
+                key={f.id}
+                className="move-folder-item"
+                onClick={() => {
+                  const next = browsePath === "/" ? "/" + f.name : browsePath + "/" + f.name;
+                  setBrowsePath(next);
+                }}
+              >
+                <span className="file-icon">{"\uD83D\uDCC1"}</span>
+                <span>{f.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+
         <div className="modal-actions">
-          <button className="btn btn-ghost" onClick={onClose}>
-            Cancelar
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              const d = dest.trim() || "/";
-              onConfirm(d.startsWith("/") ? d : "/" + d);
-            }}
-          >
-            Mover
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={() => onConfirm(browsePath)}>
+            Mover aqu\u00ed
           </button>
         </div>
       </div>
@@ -392,6 +455,7 @@ export function FilesPage() {
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [renaming, setRenaming] = useState<RenameTarget | null>(null);
   const [moving, setMoving] = useState<MoveTarget | null>(null);
+  const [batchMoveTarget, setBatchMoveTarget] = useState(false);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const pageSize = 50;
@@ -681,26 +745,6 @@ export function FilesPage() {
     await loadFiles(currentPath, page);
   }
 
-  // ── batch move ──
-  async function batchMove(dest: string) {
-    if (selected.size === 0) return;
-    let ok = 0;
-    for (const id of selected) {
-      const file = files.find((f) => f.id === id);
-      try {
-        if (file) {
-          await api.patchFile(id, { parent_path: dest });
-        } else {
-          await api.patchFolder(id, { parent_path: dest });
-        }
-        ok++;
-      } catch {}
-    }
-    setSelected(new Set());
-    toast(`${ok} elemento(s) movido(s)`, "success");
-    await loadFiles(currentPath, page);
-  }
-
   // ── sorted view ──
   function getSortedItems() {
     const items = [
@@ -854,10 +898,7 @@ export function FilesPage() {
           <button className="btn btn-danger btn-sm" onClick={batchDelete}>
             Eliminar
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => {
-            const dest = prompt("Ruta de destino:");
-            if (dest) batchMove(dest.trim());
-          }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setBatchMoveTarget(true)}>
             Mover
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>
@@ -878,16 +919,49 @@ export function FilesPage() {
       ) : viewMode === "grid" ? (
         /* Grid view */
         <div className="grid-view">
-          {folders.map((folder) => (
-            <div key={folder.id} className="grid-item" onClick={() => navigate(joinPath(folder.parent_path, folder.name))}>
+          {folders.map((folder) => {
+            const fDragData = JSON.stringify({ kind: "folder", id: folder.id, currentPath: folder.parent_path });
+            return (
+            <div
+              key={folder.id}
+              className="grid-item"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", fDragData);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                try {
+                  const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                  const dest = folder.parent_path === "/" ? "/" + folder.name : folder.parent_path + "/" + folder.name;
+                  if (data.kind === "file") {
+                    await api.patchFile(data.id, { parent_path: dest });
+                  } else {
+                    await api.patchFolder(data.id, { parent_path: dest });
+                  }
+                  toast("Elemento movido", "success");
+                  await loadFiles(currentPath, page);
+                } catch { toast("Error al mover", "error"); }
+              }}
+              onClick={() => navigate(joinPath(folder.parent_path, folder.name))}
+            >
               <div className="grid-icon folder-big">\uD83D\uDCC1</div>
               <div className="grid-name">{folder.name}</div>
             </div>
-          ))}
-          {files.map((f) => (
+          )})}
+          {files.map((f) => {
+            const fDragData = JSON.stringify({ kind: "file", id: f.id, currentPath: f.parent_path });
+            return (
             <div
               key={f.id}
               className={`grid-item ${selected.has(f.id) ? "grid-selected" : ""}`}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", fDragData);
+                e.dataTransfer.effectAllowed = "move";
+              }}
               onClick={() => toggleSelect(f.id)}
               onDoubleClick={() => {
                 if (isImageMime(f.mime_type) || isVideoMime(f.mime_type)) {
@@ -906,7 +980,7 @@ export function FilesPage() {
               )}
               <div className="grid-name">{f.name}</div>
             </div>
-          ))}
+          )})}
         </div>
       ) : (
         /* List view */
@@ -914,8 +988,34 @@ export function FilesPage() {
           <div className="file-table">
             <SortControls field={sortField} dir={sortDir} onChange={(f, d) => { setSortField(f); setSortDir(d); }} />
 
-            {getSortedItems().map((item: any) => (
-              <div className={`file-row ${selected.has(item.id) ? "row-selected" : ""}`} key={item.id}>
+            {getSortedItems().map((item: any) => {
+              const dragData = JSON.stringify({ kind: item._kind, id: item.id, currentPath: item.parent_path });
+              const isFolder = item._kind === "folder";
+              return (
+              <div
+                className={`file-row ${selected.has(item.id) ? "row-selected" : ""}`}
+                key={item.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", dragData);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={isFolder ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } : undefined}
+                onDrop={isFolder ? async (e) => {
+                  e.preventDefault();
+                  try {
+                    const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                    const dest = item.parent_path === "/" ? "/" + item.name : item.parent_path + "/" + item.name;
+                    if (data.kind === "file") {
+                      await api.patchFile(data.id, { parent_path: dest });
+                    } else {
+                      await api.patchFolder(data.id, { parent_path: dest });
+                    }
+                    toast("Elemento movido", "success");
+                    await loadFiles(currentPath, page);
+                  } catch { toast("Error al mover", "error"); }
+                } : undefined}
+              >
                 <div className="file-name">
                   {selected.size > 0 || true ? (
                     <input
@@ -1014,7 +1114,7 @@ export function FilesPage() {
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
 
           {/* Pagination */}
@@ -1049,6 +1149,33 @@ export function FilesPage() {
           currentPath={moving.parentPath}
           onConfirm={onMoveConfirm}
           onClose={() => setMoving(null)}
+        />
+      )}
+
+      {/* Batch move modal */}
+      {batchMoveTarget && (
+        <MoveModal
+          label={`${selected.size} elemento(s)`}
+          currentPath={currentPath}
+          onConfirm={async (dest) => {
+            setBatchMoveTarget(false);
+            let ok = 0;
+            for (const id of selected) {
+              const file = files.find((f) => f.id === id);
+              try {
+                if (file) {
+                  await api.patchFile(id, { parent_path: dest });
+                } else {
+                  await api.patchFolder(id, { parent_path: dest });
+                }
+                ok++;
+              } catch {}
+            }
+            setSelected(new Set());
+            toast(`${ok} elemento(s) movido(s)`, "success");
+            await loadFiles(currentPath, page);
+          }}
+          onClose={() => setBatchMoveTarget(false)}
         />
       )}
 
