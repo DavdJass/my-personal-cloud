@@ -1,14 +1,22 @@
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
-import { useAI } from "./aiContext";
 import { LoginPage } from "./pages/LoginPage";
 import { FilesPage } from "./pages/FilesPage";
 import { GalleryPage } from "./pages/GalleryPage";
-import { SearchPage } from "./pages/SearchPage";
+import { useTheme } from "./theme";
+import { ToastProvider } from "./toast";
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
+  );
+}
+
+function AppInner() {
   const { user, loading, logout } = useAuth();
-  const ai = useAI();
+  const { toggle, isDark } = useTheme();
 
   if (loading) {
     return (
@@ -41,13 +49,15 @@ export default function App() {
           <NavLink to="/gallery" className={({ isActive }) => (isActive ? "active" : "")}>
             Galería
           </NavLink>
-          {ai?.enabled && (
-            <NavLink to="/search" className={({ isActive }) => (isActive ? "active" : "")}>
-              Buscar IA
-            </NavLink>
-          )}
         </nav>
         <div className="user-block">
+          <button
+            className="btn btn-ghost btn-sm theme-toggle"
+            onClick={toggle}
+            title={isDark ? "Activar modo claro" : "Activar modo oscuro"}
+          >
+            {isDark ? "\u2600" : "\u{1F319}"}
+          </button>
           <span className="user-name">{user.username}</span>
           <button className="btn btn-ghost" onClick={logout}>
             Salir
@@ -58,7 +68,6 @@ export default function App() {
         <Routes>
           <Route path="/files" element={<FilesPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
-          <Route path="/search" element={<SearchPage />} />
           <Route path="*" element={<Navigate to="/files" replace />} />
         </Routes>
       </main>

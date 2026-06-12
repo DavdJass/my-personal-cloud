@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	// Register the standard image decoders so image.Decode handles JPEG, PNG
-	// and GIF transparently.
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -43,6 +42,7 @@ type Service struct {
 	db        *sql.DB
 	store     *storage.LocalStore
 	thumbsDir string
+	logger    *slog.Logger
 
 	// inflight deduplicates concurrent thumbnail generation for the same id.
 	inflight sync.Map // map[string]*sync.Mutex
@@ -54,11 +54,11 @@ func NewService(db *sql.DB, store *storage.LocalStore, storageRoot string) (*Ser
 	if err := os.MkdirAll(thumbsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create thumbs dir: %w", err)
 	}
-	return &Service{db: db, store: store, thumbsDir: thumbsDir}, nil
+	return &Service{db: db, store: store, thumbsDir: thumbsDir, logger: slog.Default()}, nil
 }
 
-// ListHandler handles GET /api/photos and returns every image owned by the
-// authenticated user, newest first.
+// ListHandler handles GET /api/photos?limit=50&offset=0 and returns every
+// image owned by the authenticated user, newest first.
 func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.FromContext(r.Context())
 	if !ok {
@@ -66,14 +66,29 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
 	rows, err := s.db.QueryContext(r.Context(),
 		`SELECT id, name, mime_type, size_bytes, created_at
 		   FROM files
-		  WHERE user_id = ? AND is_image = 1
-		  ORDER BY created_at DESC`,
-		user.ID,
+		  WHERE user_id = ? AND is_image = 1 AND deleted_at IS NULL
+		  ORDER BY created_at DESC
+		  LIMIT ? OFFSET ?`,
+		user.ID, limit, offset,
 	)
 	if err != nil {
+		s.logger.Error("list photos failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "list photos failed")
 		return
 	}
@@ -83,13 +98,25 @@ func (s *Service) ListHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p Photo
 		if err := rows.Scan(&p.ID, &p.Name, &p.MimeType, &p.SizeBytes, &p.CreatedAt); err != nil {
+			s.logger.Error("scan photo failed", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
 		out = append(out, p)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"photos": out})
+	var total int
+	_ = s.db.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM files WHERE user_id = ? AND is_image = 1 AND deleted_at IS NULL`,
+		user.ID,
+	).Scan(&total)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"photos": out,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // ThumbHandler handles GET /api/photos/{id}/thumb?size=256 and returns a
@@ -111,6 +138,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	storagePath, ok, err := s.lookupImage(r, user.ID, id)
 	if err != nil {
+		s.logger.Error("lookup image for thumb failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -123,6 +151,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := os.Stat(thumbPath); errors.Is(err, os.ErrNotExist) {
 		if err := s.generateThumb(id, storagePath, thumbPath, size); err != nil {
+			s.logger.Error("generate thumbnail failed", "error", err, "photo_id", id)
 			writeJSONError(w, http.StatusInternalServerError, "thumb generation failed: "+err.Error())
 			return
 		}
@@ -130,6 +159,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 
 	f, err := os.Open(thumbPath)
 	if err != nil {
+		s.logger.Error("open thumb file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "open thumb failed")
 		return
 	}
@@ -169,12 +199,14 @@ func (s *Service) FullHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		s.logger.Error("lookup photo for full failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
 
 	f, err := s.store.Open(storagePath)
 	if err != nil {
+		s.logger.Error("open photo file failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "open failed")
 		return
 	}
@@ -230,8 +262,7 @@ func (s *Service) generateThumb(id, storagePath, thumbPath string, size int) err
 		return fmt.Errorf("decode: %w", err)
 	}
 
-	// Fit-and-crop to a centered square at the requested size; produces a
-	// uniform tile look in the gallery grid.
+	// Fit-and-crop to a centered square at the requested size.
 	thumb := imaging.Fill(img, size, size, imaging.Center, imaging.Lanczos)
 
 	var buf bytes.Buffer

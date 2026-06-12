@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -29,11 +30,12 @@ type Service struct {
 	db     *sql.DB
 	secret []byte
 	expiry time.Duration
+	logger *slog.Logger
 }
 
 // NewService constructs an auth service backed by the given SQLite handle.
 func NewService(db *sql.DB, secret []byte, expiry time.Duration) *Service {
-	return &Service{db: db, secret: secret, expiry: expiry}
+	return &Service{db: db, secret: secret, expiry: expiry, logger: slog.Default()}
 }
 
 // EnsureUser creates a user with the given credentials if it does not yet
@@ -65,6 +67,8 @@ func (s *Service) EnsureUser(ctx context.Context, username, password string) err
 	if err != nil {
 		return fmt.Errorf("insert user: %w", err)
 	}
+
+	s.logger.Info("user created", "username", username)
 	return nil
 }
 
@@ -107,34 +111,7 @@ func (s *Service) issueToken(id int64, username string) (string, error) {
 	return tok.SignedString(s.secret)
 }
 
-// Middleware verifies the Authorization: Bearer <token> header on protected
-// routes and injects the resolved user into the request context.
-func (s *Service) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		if header == "" {
-			// Fall back to a query token for endpoints used by <img>/<a> tags
-			// where setting an Authorization header is not possible.
-			if t := r.URL.Query().Get("token"); t != "" {
-				header = "Bearer " + t
-			}
-		}
-		if !strings.HasPrefix(header, "Bearer ") {
-			writeJSONError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
-			return
-		}
-		raw := strings.TrimPrefix(header, "Bearer ")
-
-		user, err := s.parseToken(raw)
-		if err != nil {
-			writeJSONError(w, http.StatusUnauthorized, "invalid or expired token")
-			return
-		}
-		ctx := context.WithValue(r.Context(), userCtxKey, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
+// parseToken parses and validates a JWT string, returning the embedded user.
 func (s *Service) parseToken(raw string) (*User, error) {
 	tok, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -163,12 +140,42 @@ func (s *Service) parseToken(raw string) (*User, error) {
 	return &User{ID: id, Username: usr}, nil
 }
 
+// Middleware verifies the Authorization: Bearer <token> header on protected
+// routes and injects the resolved user into the request context.
+func (s *Service) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		if header == "" {
+			// Fall back to a query token for endpoints used by <img>/<a> tags
+			// where setting an Authorization header is not possible.
+			if t := r.URL.Query().Get("token"); t != "" {
+				header = "Bearer " + t
+			}
+		}
+		if !strings.HasPrefix(header, "Bearer ") {
+			writeJSONError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
+			return
+		}
+		raw := strings.TrimPrefix(header, "Bearer ")
+
+		user, err := s.parseToken(raw)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		ctx := context.WithValue(r.Context(), userCtxKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // FromContext returns the authenticated user attached by Middleware. The
 // boolean is false when the request was not authenticated.
 func FromContext(ctx context.Context) (*User, bool) {
 	u, ok := ctx.Value(userCtxKey).(*User)
 	return u, ok
 }
+
+// ── HANDLERS ─────────────────────────────────────────────────────────────────
 
 // LoginHandler handles POST /api/auth/login.
 func (s *Service) LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -187,12 +194,14 @@ func (s *Service) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		s.logger.Error("login failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "login failed")
 		return
 	}
 
+	s.logger.Info("login successful", "user_id", user.ID, "username", user.Username)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token": token,
+		"token":              token,
 		"user": map[string]any{
 			"id":       user.ID,
 			"username": user.Username,
@@ -212,6 +221,74 @@ func (s *Service) MeHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":       u.ID,
 		"username": u.Username,
+	})
+}
+
+// RefreshHandler handles POST /api/auth/refresh. It accepts a valid JWT and
+// issues a new one if the current token is within its validity window.
+func (s *Service) RefreshHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		// Fall back to Authorization header.
+		header := r.Header.Get("Authorization")
+		if strings.HasPrefix(header, "Bearer ") {
+			body.Token = strings.TrimPrefix(header, "Bearer ")
+		}
+	}
+	if body.Token == "" {
+		writeJSONError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	// Parse the existing token without validating expiry.
+	tok, _, err := new(jwt.Parser).ParseUnverified(body.Token, jwt.MapClaims{})
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid token")
+		return
+	}
+
+	claims, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		writeJSONError(w, http.StatusBadRequest, "invalid claims")
+		return
+	}
+
+	sub, _ := claims["sub"].(string)
+	usr, _ := claims["usr"].(string)
+	if sub == "" || usr == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing claims")
+		return
+	}
+
+	var id int64
+	if _, err := fmt.Sscanf(sub, "%d", &id); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad subject")
+		return
+	}
+
+	// Verify the token is still valid (signature + expiry).
+	parsedUser, err := s.parseToken(body.Token)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "token expired or invalid")
+		return
+	}
+
+	newToken, err := s.issueToken(parsedUser.ID, parsedUser.Username)
+	if err != nil {
+		s.logger.Error("refresh token issuance failed", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "token refresh failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":              newToken,
+		"user": map[string]any{
+			"id":       parsedUser.ID,
+			"username": parsedUser.Username,
+		},
+		"expires_in_seconds": int(s.expiry.Seconds()),
 	})
 }
 

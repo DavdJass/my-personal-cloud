@@ -34,78 +34,83 @@ func Open(path string) (*sql.DB, error) {
 	return conn, nil
 }
 
+var schemaVersion = 1
+
 func migrate(conn *sql.DB) error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id           INTEGER PRIMARY KEY AUTOINCREMENT,
-			username     TEXT    NOT NULL UNIQUE,
-			password_hash TEXT   NOT NULL,
-			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS files (
-			id           TEXT    PRIMARY KEY,
-			user_id      INTEGER NOT NULL,
-			name         TEXT    NOT NULL,
-			parent_path  TEXT    NOT NULL DEFAULT '/',
-			storage_path TEXT    NOT NULL,
-			mime_type    TEXT    NOT NULL,
-			size_bytes   INTEGER NOT NULL,
-			is_image     INTEGER NOT NULL DEFAULT 0,
-			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_files_user_parent ON files(user_id, parent_path)`,
-		`CREATE INDEX IF NOT EXISTS idx_files_user_image ON files(user_id, is_image)`,
-		`CREATE TABLE IF NOT EXISTS folders (
-			id          TEXT    PRIMARY KEY,
-			user_id     INTEGER NOT NULL,
-			name        TEXT    NOT NULL,
-			parent_path TEXT    NOT NULL DEFAULT '/',
-			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_folders_user_parent ON folders(user_id, parent_path)`,
-		// AI search — kept in a separate table so the AI module is fully
-		// isolated from the rest of the schema. Records here are optional;
-		// removing them never affects the underlying file row.
-		`CREATE TABLE IF NOT EXISTS file_embeddings (
-			file_id     TEXT     PRIMARY KEY,
-			embedding   BLOB     NOT NULL,
-			description TEXT     NOT NULL,
-			indexed_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
-		)`,
+	// Create schema_version table if not exists.
+	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	for _, s := range stmts {
-		if _, err := conn.Exec(s); err != nil {
-			return fmt.Errorf("migrate: %w\nstatement: %s", err, s)
+	var current int
+	err := conn.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&current)
+	if err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+
+	steps := []struct {
+		version int
+		sql     string
+	}{
+		{
+			version: 1,
+			sql: `
+				CREATE TABLE IF NOT EXISTS users (
+					id           INTEGER PRIMARY KEY AUTOINCREMENT,
+					username     TEXT    NOT NULL UNIQUE,
+					password_hash TEXT   NOT NULL,
+					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+				CREATE TABLE IF NOT EXISTS files (
+					id           TEXT    PRIMARY KEY,
+					user_id      INTEGER NOT NULL,
+					name         TEXT    NOT NULL,
+					parent_path  TEXT    NOT NULL DEFAULT '/',
+					storage_path TEXT    NOT NULL,
+					mime_type    TEXT    NOT NULL,
+					size_bytes   INTEGER NOT NULL,
+					is_image     INTEGER NOT NULL DEFAULT 0,
+					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
+				CREATE INDEX IF NOT EXISTS idx_files_user_parent ON files(user_id, parent_path);
+				CREATE INDEX IF NOT EXISTS idx_files_user_image ON files(user_id, is_image);
+				CREATE TABLE IF NOT EXISTS folders (
+					id          TEXT    PRIMARY KEY,
+					user_id     INTEGER NOT NULL,
+					name        TEXT    NOT NULL,
+					parent_path TEXT    NOT NULL DEFAULT '/',
+					created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
+				CREATE INDEX IF NOT EXISTS idx_folders_user_parent ON folders(user_id, parent_path);
+			`,
+		},
+		{
+			version: 2,
+			sql: `
+				ALTER TABLE files ADD COLUMN deleted_at DATETIME;
+			`,
+		},
+	}
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, step := range steps {
+		if step.version <= current {
+			continue
+		}
+		if _, err := tx.Exec(step.sql); err != nil {
+			return fmt.Errorf("migrate v%d: %w\nstatement: %s", step.version, err, step.sql)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, step.version); err != nil {
+			return fmt.Errorf("record migration v%d: %w", step.version, err)
 		}
 	}
 
-	// Backwards-compatible column add for existing databases. SQLite has no
-	// IF NOT EXISTS for ADD COLUMN, so we ignore the "duplicate column" error.
-	if _, err := conn.Exec(`ALTER TABLE files ADD COLUMN ai_indexed INTEGER NOT NULL DEFAULT 0`); err != nil {
-		if !isDuplicateColumn(err) {
-			return fmt.Errorf("migrate add ai_indexed: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// isDuplicateColumn detects the SQLite error returned when ADD COLUMN runs
-// against a column that already exists; we treat it as a no-op.
-func isDuplicateColumn(err error) bool {
-	msg := err.Error()
-	return contains(msg, "duplicate column") || contains(msg, "already exists")
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return tx.Commit()
 }

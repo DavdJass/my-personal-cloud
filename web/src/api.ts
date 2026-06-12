@@ -69,22 +69,8 @@ export interface FileEntry {
   mime_type: string;
   size_bytes: number;
   is_image: boolean;
-  ai_indexed: boolean;
   created_at: string;
-}
-
-export interface AIStatus {
-  enabled: boolean;
-  model: string;
-}
-
-export interface AISearchResult {
-  file_id: string;
-  name: string;
-  parent_path: string;
-  mime_type: string;
-  is_image: boolean;
-  score: number;
+  deleted_at?: string;
 }
 
 export interface FolderEntry {
@@ -102,6 +88,36 @@ export interface PhotoEntry {
   created_at: string;
 }
 
+export interface ListResponse {
+  path?: string;
+  folders: FolderEntry[];
+  files: FileEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SearchResponse {
+  files: FileEntry[];
+  folders: FolderEntry[];
+  limit: number;
+  offset: number;
+}
+
+export interface PhotosResponse {
+  photos: PhotoEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TrashResponse {
+  files: FileEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>("/api/auth/login", {
@@ -111,18 +127,52 @@ export const api = {
 
   me: () => request<User>("/api/auth/me"),
 
-  listFiles: (path = "/") =>
-    request<{ path: string; folders: FolderEntry[]; files: FileEntry[] }>(
-      `/api/files?path=${encodeURIComponent(path)}`
+  refresh: () =>
+    request<LoginResponse>("/api/auth/refresh", { method: "POST" }),
+
+  listFiles: (path = "/", limit = 50, offset = 0) =>
+    request<ListResponse>(
+      `/api/files?path=${encodeURIComponent(path)}&limit=${limit}&offset=${offset}`
     ),
 
-  uploadFile: (file: File, parentPath = "/") => {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("path", parentPath);
-    return request<FileEntry>("/api/files/upload", {
-      method: "POST",
-      body: fd,
+  search: (q: string, limit = 50, offset = 0) =>
+    request<SearchResponse>(
+      `/api/files/search?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`
+    ),
+
+  uploadFile: (file: File, parentPath = "/", onProgress?: (pct: number) => void) => {
+    return new Promise<FileEntry>((resolve, reject) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("path", parentPath);
+
+      const token = getToken();
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/files/upload");
+
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          let msg = `Upload failed (${xhr.status})`;
+          try {
+            const body = JSON.parse(xhr.responseText);
+            msg = body.error || msg;
+          } catch {}
+          reject(new ApiError(msg, xhr.status));
+        }
+      };
+
+      xhr.onerror = () => reject(new ApiError("Network error", 0));
+      xhr.send(fd);
     });
   },
 
@@ -135,9 +185,17 @@ export const api = {
   deleteFile: (id: string) =>
     request<void>(`/api/files/${id}`, { method: "DELETE" }),
 
+  restoreFile: (id: string) =>
+    request<void>(`/api/files/${id}/restore`, { method: "POST" }),
+
   downloadUrl: (id: string) => {
     const token = getToken() ?? "";
     return `/api/files/${id}/download?token=${encodeURIComponent(token)}`;
+  },
+
+  streamUrl: (id: string) => {
+    const token = getToken() ?? "";
+    return `/api/files/${id}/download?inline=1&token=${encodeURIComponent(token)}`;
   },
 
   createFolder: (name: string, parentPath = "/") =>
@@ -155,8 +213,10 @@ export const api = {
   deleteFolder: (id: string) =>
     request<void>(`/api/folders/${id}`, { method: "DELETE" }),
 
-  listPhotos: () =>
-    request<{ photos: PhotoEntry[] }>("/api/photos"),
+  listPhotos: (limit = 50, offset = 0) =>
+    request<PhotosResponse>(
+      `/api/photos?limit=${limit}&offset=${offset}`
+    ),
 
   thumbUrl: (id: string, size = 256) => {
     const token = getToken() ?? "";
@@ -168,21 +228,11 @@ export const api = {
     return `/api/photos/${id}/full?token=${encodeURIComponent(token)}`;
   },
 
-  aiStatus: () => request<AIStatus>("/api/ai/status"),
+  listTrash: (limit = 50, offset = 0) =>
+    request<TrashResponse>(`/api/trash?limit=${limit}&offset=${offset}`),
 
-  aiIndex: (id: string) =>
-    request<{ file_id: string; description: string; dimensions: number }>(
-      `/api/ai/index/${id}`,
-      { method: "POST" }
-    ),
-
-  aiRemoveIndex: (id: string) =>
-    request<void>(`/api/ai/index/${id}`, { method: "DELETE" }),
-
-  aiSearch: (q: string, limit = 20) =>
-    request<{ query: string; count: number; results: AISearchResult[] }>(
-      `/api/ai/search?q=${encodeURIComponent(q)}&limit=${limit}`
-    ),
+  emptyTrash: () =>
+    request<void>("/api/trash/empty", { method: "POST" }),
 };
 
 export function formatSize(bytes: number): string {
@@ -195,4 +245,8 @@ export function formatSize(bytes: number): string {
     i++;
   }
   return `${n.toFixed(1)} ${units[i]}`;
+}
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString();
 }
