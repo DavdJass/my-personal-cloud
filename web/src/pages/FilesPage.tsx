@@ -6,6 +6,7 @@ import {
 } from "react";
 import { api, formatSize, formatDate, type FileEntry, type FolderEntry } from "../api";
 import { useToast } from "../toast";
+import { ShareDialog } from "./ShareDialog";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -384,7 +385,7 @@ function TrashView({ onBack }: { onBack: () => void }) {
           </button>
           {files.length > 0 && (
             <button className="btn btn-danger" onClick={async () => {
-              if (!confirm("Vaciar papelera? Esto eliminar\u00e1 los archivos permanentemente.")) return;
+              if (!confirm("Vaciar papelera? Esto eliminará los archivos permanentemente.")) return;
               try {
                 await api.emptyTrash();
                 toast("Papelera vaciada", "success");
@@ -455,6 +456,7 @@ export function FilesPage() {
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [renaming, setRenaming] = useState<RenameTarget | null>(null);
   const [moving, setMoving] = useState<MoveTarget | null>(null);
+  const [shareItem, setShareItem] = useState<{ id: string; name: string; kind: "file" | "folder" } | null>(null);
   const [batchMoveTarget, setBatchMoveTarget] = useState(false);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
@@ -702,7 +704,7 @@ export function FilesPage() {
 
   // ── delete single ──
   async function onDeleteFile(id: string, name: string) {
-    if (!confirm(`\u00bfEliminar el archivo "${name}"?`)) return;
+    if (!confirm(`¿Eliminar el archivo "${name}"?`)) return;
     try {
       await api.deleteFile(id);
       setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -1103,6 +1105,14 @@ export function FilesPage() {
                     Mover
                   </button>
                   <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() =>
+                      setShareItem({ id: item.id, name: item.name, kind: item._kind === "folder" ? "folder" : "file" })
+                    }
+                  >
+                    Compartir
+                  </button>
+                  <button
                     className="btn btn-danger btn-sm"
                     onClick={() =>
                       item._kind === "folder"
@@ -1189,6 +1199,16 @@ export function FilesPage() {
         <CreateFolderModal
           onConfirm={onNewFolder}
           onClose={() => setShowNewFolderModal(false)}
+        />
+      )}
+
+      {/* Share dialog */}
+      {shareItem && (
+        <ShareDialog
+          itemId={shareItem.id}
+          itemName={shareItem.name}
+          itemType={shareItem.kind}
+          onClose={() => setShareItem(null)}
         />
       )}
     </div>

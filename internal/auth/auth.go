@@ -146,10 +146,17 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		if header == "" {
-			// Fall back to a query token for endpoints used by <img>/<a> tags
-			// where setting an Authorization header is not possible.
-			if t := r.URL.Query().Get("token"); t != "" {
-				header = "Bearer " + t
+			// Fall back to a query token for GET requests to media endpoints
+			// (<img> and <a> tags cannot set Authorization headers).
+			// Note: tokens in URLs can leak through server access logs and
+			// referrer headers. In high-security environments, replace this
+			// with short-lived signed URLs.
+			if r.Method == http.MethodGet {
+				if t := r.URL.Query().Get("token"); t != "" {
+					header = "Bearer " + t
+					s.logger.Warn("auth via query token - tokens in URLs may leak through logs",
+						"path", r.URL.Path, "method", r.Method)
+				}
 			}
 		}
 		if !strings.HasPrefix(header, "Bearer ") {
@@ -295,9 +302,11 @@ func (s *Service) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 var errInvalidCredentials = errors.New("invalid credentials")
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(body)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

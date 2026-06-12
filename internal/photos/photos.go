@@ -152,7 +152,7 @@ func (s *Service) ThumbHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat(thumbPath); errors.Is(err, os.ErrNotExist) {
 		if err := s.generateThumb(id, storagePath, thumbPath, size); err != nil {
 			s.logger.Error("generate thumbnail failed", "error", err, "photo_id", id)
-			writeJSONError(w, http.StatusInternalServerError, "thumb generation failed: "+err.Error())
+			writeJSONError(w, http.StatusInternalServerError, "thumb generation failed")
 			return
 		}
 	}
@@ -281,9 +281,11 @@ func (s *Service) generateThumb(id, storagePath, thumbPath string, size int) err
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(body)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

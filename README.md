@@ -59,11 +59,7 @@ my-personal-cloud/
 │   │   ├── toast.tsx     Toast notification system
 │   │   └── theme.tsx     Dark/light theme provider
 │   └── dist/             Build output (embedded in Go binary)
-├── deploy/
-│   ├── deploy.sh         One-click deployment script (Linux/Mac)
-│   ├── deploy.ps1        One-click deployment script (Windows)
-│   ├── .env.pi.example   Configuration template for the Pi
-│   └── my-personal-cloud.service   systemd unit file
+├── deploy/               Systemd service unit file
 ├── Caddyfile             Example reverse proxy configuration
 ├── Makefile              Build shortcuts (local + cross-compile)
 └── README.md             This file
@@ -125,8 +121,8 @@ make build      # Produces ./my-personal-cloud
 | `CLOUD_DB_PATH` | `./data/cloud.db` | No | Path to the SQLite database file |
 | `CLOUD_JWT_SECRET` | (random at startup) | **Recommended** | HMAC key for JWT signing. Set this to persist sessions across restarts |
 | `CLOUD_JWT_EXPIRY_HOURS` | `24` | No | JWT token validity in hours |
-| `CLOUD_MAX_UPLOAD_MB` | `10240` (10 GiB) | No | Maximum single upload size in MB |
-| `CLOUD_CORS_ORIGIN` | `*` | No | Allowed CORS origin |
+| `CLOUD_MAX_UPLOAD_MB` | `500` | No | Maximum single upload size in MB |
+| `CLOUD_CORS_ORIGIN` | `*` | No | Allowed CORS origin. Set to your domain in production (e.g. `https://cloud.example.com`) |
 | `CLOUD_ADMIN_USER` | (empty) | **Yes** | Bootstrap admin username (created on first start) |
 | `CLOUD_ADMIN_PASS` | (empty) | **Yes** | Bootstrap admin password |
 
@@ -134,125 +130,53 @@ make build      # Produces ./my-personal-cloud
 
 ---
 
-## Deploying on a Raspberry Pi (one-click)
-
-No need to type commands on the Pi. Everything is done from your development machine.
+## Deploying on a Raspberry Pi
 
 ### Prerequisites
 
-- Raspberry Pi (3B+ or newer, Pi 5 ideal) running **Raspberry Pi OS** (64-bit) with **SSH enabled**.
-- Your Pi must be reachable from your machine (same network, or via Tailscale/ZeroTier).
-- Your development machine needs **Go 1.22+**, **Node 20+**, `ssh`, and `scp`.
+- Raspberry Pi (3B+ or newer recommended, Pi 5 ideal) running **Raspberry Pi OS** (64-bit).
+- External USB drive or SSD for storage (optional but recommended).
+- Your development machine with Go 1.22+ and Node 20+.
 
 ---
 
-### Quick deploy (recommended)
+### Step 1: Cross-compile from your machine
 
-**Step 1: Configure**
-
-Copy the example config file and edit it with your Pi details:
+On your development machine, run:
 
 ```bash
-cp deploy/.env.pi.example deploy/.env.pi
-nano deploy/.env.pi
-```
-
-Fill in your Pi's hostname/IP, SSH user, and the admin credentials you want:
-
-```ini
-PI_HOST=raspberrypi.local
-PI_USER=pi
-CLOUD_ADMIN_USER=admin
-CLOUD_ADMIN_PASS=your-strong-password-here
-# Leave empty to auto-generate
-CLOUD_JWT_SECRET=
-```
-
-**Step 2: Deploy with one command**
-
-**Linux / Mac:**
-
-```bash
-make deploy-pi-run
-```
-
-Or directly:
-
-```bash
-./deploy/deploy.sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-.\deploy\deploy.ps1
-```
-
-That's it. The script will:
-
-1. Cross-compile the server for ARM64
-2. Copy files to the Pi via SCP
-3. SSH into the Pi and automatically:
-   - Create the `cloud` system user
-   - Set up directories (`/opt/my-personal-cloud`, `/mnt/cloud/storage`)
-   - Generate a secure JWT secret (or use yours)
-   - Write the secrets file at `/etc/my-personal-cloud.env`
-   - Install and start the systemd service
-   - Install Caddy and configure the reverse proxy
-4. Print the URL to access your cloud: **`https://cloud.local`**
-
----
-
-### Fully automated (no prompts)
-
-Pass all values as arguments:
-
-**Linux / Mac:**
-
-```bash
-./deploy/deploy.sh -h 192.168.1.100 -u admin -p MySecretPass
-```
-
-**Windows (PowerShell):**
-
-```powershell
-.\deploy\deploy.ps1 -PiHost 192.168.1.100 -AdminPass "MySecretPass"
-```
-
-All options:
-
-| Flag (bash) | Parameter (PowerShell) | Description |
-|---|---|---|
-| `-h <host>` | `-PiHost` | Pi hostname or IP |
-| `-u <user>` | `-PiUser` | SSH user (default: pi) |
-| `-a <user>` | `-AdminUser` | Cloud admin username (default: admin) |
-| `-p <pass>` | `-AdminPass` | Cloud admin password |
-| `-j <secret>` | `-JwtSecret` | JWT signing secret (auto-generated if empty) |
-
----
-
-### Manual deploy (step by step)
-
-If you prefer to do things manually or the automated script doesn't fit your setup:
-
-```bash
-# 1. Cross-compile from your machine
 make build-pi
+```
 
-# 2. Copy files to the Pi
+This produces a statically-linked ARM64 binary `my-personal-cloud-arm64` with the frontend embedded. No CGO, no external dependencies.
+
+---
+
+### Step 2: Copy files to the Raspberry Pi
+
+```bash
 scp my-personal-cloud-arm64 pi@raspberrypi.local:/tmp/
 scp Caddyfile pi@raspberrypi.local:/tmp/
 scp deploy/my-personal-cloud.service pi@raspberrypi.local:/tmp/
-
-# 3. SSH into the Pi and run:
-ssh pi@raspberrypi.local
 ```
 
-Then on the Pi:
+If hostname resolution doesn't work, use the Pi's IP address directly:
 
 ```bash
-# Create the cloud user and directories
+scp my-personal-cloud-arm64 pi@192.168.1.X:/tmp/
+```
+
+---
+
+### Step 3: Set up the server on the Pi
+
+SSH into the Pi and run the following commands:
+
+```bash
+# Create a dedicated system user
 sudo useradd -r -s /usr/sbin/nologin cloud
+
+# Create directories
 sudo mkdir -p /opt/my-personal-cloud /mnt/cloud/storage
 
 # Place the binary
@@ -260,44 +184,117 @@ sudo mv /tmp/my-personal-cloud-arm64 /opt/my-personal-cloud/my-personal-cloud
 sudo chmod +x /opt/my-personal-cloud/my-personal-cloud
 sudo chown -R cloud:cloud /opt/my-personal-cloud /mnt/cloud
 
-# Create secrets file
-sudo tee /etc/my-personal-cloud.env >/dev/null <<EOF
+# Create the environment file with secrets
+sudo tee /etc/my-personal-cloud.env >/dev/null <<'EOF'
 CLOUD_JWT_SECRET=$(openssl rand -hex 32)
 CLOUD_ADMIN_USER=admin
 CLOUD_ADMIN_PASS=your-strong-password-here
 EOF
+
+# Secure the secrets file
 sudo chmod 600 /etc/my-personal-cloud.env
 
-# Install systemd service
-sudo mv /tmp/my-personal-cloud.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now my-personal-cloud
+# IMPORTANT: Open the env file and replace $(openssl rand -hex 32)
+# with an actual generated secret (or delete the $() and it'll expand at runtime)
+```
 
-# Install Caddy
-sudo apt update && sudo apt install -y caddy
-sudo mv /tmp/Caddyfile /etc/caddy/Caddyfile
-sudo systemctl restart caddy
+Now open the env file to set a proper JWT secret:
+
+```bash
+sudo nano /etc/my-personal-cloud.env
+```
+
+Replace `$(openssl rand -hex 32)` with an actual hex string (you can generate one with `openssl rand -hex 32` on your machine). It should look like:
+
+```
+CLOUD_JWT_SECRET=a1b2c3d4e5f6...  (64 hex characters)
+CLOUD_ADMIN_USER=admin
+CLOUD_ADMIN_PASS=your-strong-password-here
 ```
 
 ---
 
-### Post-deploy
-
-After deployment, your cloud is accessible at **`https://cloud.local`** (self-signed certificate — your browser will show a warning, which is expected).
-
-**Tips:**
-- Add `cloud.local` to your router's DNS or your machine's `hosts` file so all devices can reach it by name.
-- For remote access without opening ports, install **Tailscale** on the Pi and your devices.
-
-**Mount external storage (recommended):**
+### Step 4: Install the systemd service
 
 ```bash
-# SSH into the Pi
-sudo lsblk                          # Find your USB drive (e.g. sda1)
-sudo mkfs.ext4 /dev/sda1            # Format it (REPLACE sda1!)
-sudo blkid /dev/sda1                # Get the UUID
+sudo mv /tmp/my-personal-cloud.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now my-personal-cloud
+
+# Verify it's running
+sudo systemctl status my-personal-cloud
+
+# Check the logs
+sudo journalctl -u my-personal-cloud -f
+```
+
+---
+
+### Step 5: Set up Caddy (reverse proxy + HTTPS)
+
+Install Caddy:
+
+```bash
+sudo apt update && sudo apt install -y caddy
+```
+
+Install the Caddyfile:
+
+```bash
+sudo mv /tmp/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+```
+
+By default, the Caddyfile serves on `https://cloud.local` with a **self-signed certificate**. Your browser will show a security warning — this is expected for local-only access. You can safely proceed.
+
+For a **public domain**, edit `/etc/caddy/Caddyfile`, uncomment the `cloud.example.com` block, replace it with your domain, and ensure ports 80/443 are forwarded on your router. Caddy will automatically obtain a Let's Encrypt certificate.
+
+> **Tip:** Add `cloud.local` to your router's DNS or your local machine's `hosts` file so all devices on your network can reach the cloud by name.
+
+---
+
+### Step 6: (Optional) Remote access with Tailscale
+
+Tailscale gives you secure remote access without opening any ports on your router.
+
+```bash
+# Install Tailscale
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+
+# Authenticate (follow the URL printed)
+sudo tailscale up
+
+# (Optional) Get a TLS certificate for your Tailscale hostname
+sudo tailscale cert
+```
+
+Install Tailscale on your phone, laptop, or other devices. You can reach the Pi by its **Tailscale IP** (`100.x.y.z`) or hostname (`<hostname>.<tailnet>.ts.net`).
+
+If using Tailscale, you can enable the Tailscale Caddy config block in `Caddyfile` for automatic HTTPS via Tailscale certificates.
+
+---
+
+### Step 7: Mount external storage (recommended)
+
+Using the SD card for both the OS and file storage is not ideal. Mount an external USB drive at `/mnt/cloud`:
+
+```bash
+# Identify your external drive
+sudo lsblk
+
+# Format it (if new) — REPLACE sda1 with your actual device!
+sudo mkfs.ext4 /dev/sda1
+
+# Get the UUID
+sudo blkid /dev/sda1
+
+# Add to /etc/fstab (replace UUID with yours)
 echo 'UUID=xxxx-xxxx  /mnt/cloud  ext4  defaults,noatime,nofail  0  2' | sudo tee -a /etc/fstab
+
+# Mount it
 sudo mount /mnt/cloud
+
+# Fix permissions
 sudo chown cloud:cloud /mnt/cloud
 ```
 
@@ -343,24 +340,12 @@ curl -s http://localhost:8080/api/auth/login \
 
 When you pull new changes and want to update your Raspberry Pi:
 
-**Quick update (via deploy script):**
-
-```bash
-git pull
-./deploy/deploy.sh -h <pi-ip>     # Linux/Mac
-.\deploy\deploy.ps1 -PiHost <ip>  # Windows
-```
-
-The script detects the existing installation and only updates the binary and restarts the service.
-
-**Manual update:**
-
 ```bash
 # On your development machine
 git pull
 make build-pi
 
-# Copy to Pi
+# Copy to Pi (add -t for timestamp-based diff)
 scp my-personal-cloud-arm64 pi@raspberrypi.local:/tmp/
 
 # On the Pi

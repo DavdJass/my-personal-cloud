@@ -243,7 +243,7 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, s.maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid multipart payload: "+err.Error())
+		writeJSONError(w, http.StatusBadRequest, "invalid multipart payload")
 		return
 	}
 
@@ -265,7 +265,10 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Detect actual MIME from magic bytes.
 	var sniffBuf [mime.SniffSize]byte
 	n, _ := io.ReadFull(src, sniffBuf[:])
-	_ = mime.DetectFromBytes(sniffBuf[:n]) // could log mismatch
+	mimeVal := mime.DetectFromBytes(sniffBuf[:n])
+	if mimeVal == "" {
+		mimeVal = "application/octet-stream"
+	}
 
 	// Combine sniff buffer plus remaining data for the store.
 	combinedReader := io.MultiReader(bytes.NewReader(sniffBuf[:n]), src)
@@ -287,15 +290,10 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("duplicate check failed", "error", err)
 	}
 
-	mimeVal := header.Header.Get("Content-Type")
-	if mimeVal == "" {
-		mimeVal = "application/octet-stream"
-	}
-
 	relPath, size, err := s.store.Save(user.ID, combinedReader)
 	if err != nil {
 		s.logger.Error("save file failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "save failed: "+err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "save failed")
 		return
 	}
 
@@ -309,7 +307,7 @@ func (s *Service) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		_ = s.store.Delete(relPath)
 		s.logger.Error("insert file metadata failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "insert metadata: "+err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "insert metadata failed")
 		return
 	}
 
@@ -672,7 +670,7 @@ func (s *Service) CreateFolderHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		s.logger.Error("create folder failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "create folder failed: "+err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "create folder failed")
 		return
 	}
 
@@ -990,9 +988,11 @@ func boolInt(b bool) int {
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(body)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

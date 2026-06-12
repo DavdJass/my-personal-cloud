@@ -60,7 +60,7 @@ export function GalleryPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Galer\u00eda</h2>
+        <h2>Galería</h2>
         <div className="muted">{photos.length > 0 ? `${photos.length} fotos` : ""}</div>
       </div>
 

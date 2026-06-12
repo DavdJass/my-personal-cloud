@@ -15,7 +15,6 @@
 {
 	# Global options.
 	# email you@example.com   # required for Let's Encrypt
-	auto_https disable_redirects
 }
 
 # --- LAN access via mDNS / hostname (self-signed) ---
@@ -23,9 +22,9 @@ cloud.local {
 	tls internal
 	encode zstd gzip
 
-	# Cap upload body to match the Go server (10 GiB by default).
+	# Cap upload body to 500 MB (matches the Go server default).
 	request_body {
-		max_size 10GB
+		max_size 500MB
 	}
 
 	reverse_proxy 127.0.0.1:8080 {
@@ -38,7 +37,7 @@ cloud.local {
 # cloud.example.com {
 # 	encode zstd gzip
 # 	request_body {
-# 		max_size 10GB
+# 		max_size 500MB
 # 	}
 # 	reverse_proxy 127.0.0.1:8080 {
 # 		flush_interval -1
@@ -52,7 +51,7 @@ cloud.local {
 # 	}
 # 	encode zstd gzip
 # 	request_body {
-# 		max_size 10GB
+# 		max_size 500MB
 # 	}
 # 	reverse_proxy 127.0.0.1:8080 {
 # 		flush_interval -1

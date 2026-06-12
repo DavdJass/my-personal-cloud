@@ -1,8 +1,14 @@
+// Package ratelimit provides a per-IP sliding-window rate limiter for HTTP
+// handlers. The real client IP is extracted from the X-Forwarded-For header
+// (set by reverse proxies such as Caddy or Nginx) so the limiter works
+// correctly behind a proxy.
 package ratelimit
 
 import (
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,8 +29,7 @@ type Limiter struct {
 }
 
 // New creates a Limiter that allows limit requests per window duration.
-// A background goroutine purges stale entries every cleanup interval
-// (default: 5 minutes).
+// A background goroutine purges stale entries every 5 minutes.
 func New(limit int, window time.Duration) *Limiter {
 	if window <= 0 {
 		window = 1 * time.Minute
@@ -46,12 +51,32 @@ func (l *Limiter) Stop() {
 	close(l.stopChan)
 }
 
-// Allow returns true if the request is within the rate limit.
-func (l *Limiter) Allow(r *http.Request) bool {
+// RealIP extracts the real client IP from the request, checking
+// X-Forwarded-For first (set by reverse proxies), then falling back to
+// RemoteAddr. This ensures rate limiting works correctly behind Caddy,
+// Nginx, or any proxy that sets X-Forwarded-For.
+func RealIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.SplitN(fwd, ",", 2)
+		ip := strings.TrimSpace(parts[0])
+		if ip != "" {
+			return ip
+		}
+	}
+	if real := r.Header.Get("X-Real-IP"); real != "" {
+		return real
+	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		ip = r.RemoteAddr
+		return r.RemoteAddr
 	}
+	return ip
+}
+
+// Allow returns true if the request is within the rate limit for the real
+// client IP extracted from the request.
+func (l *Limiter) Allow(r *http.Request) bool {
+	ip := RealIP(r)
 
 	now := time.Now()
 	windowStart := now.Add(-l.window)
@@ -65,7 +90,6 @@ func (l *Limiter) Allow(r *http.Request) bool {
 		l.entries[ip] = e
 	}
 
-	// Prune timestamps outside the window.
 	valid := e.times[:0]
 	for _, t := range e.times {
 		if t.After(windowStart) {
@@ -83,11 +107,15 @@ func (l *Limiter) Allow(r *http.Request) bool {
 }
 
 // Middleware returns an HTTP middleware that rejects requests with 429 when
-// the rate limit is exceeded.
+// the rate limit is exceeded. A Retry-After header is included so clients
+// know when they can retry.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !l.Allow(r) {
-			http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", l.window.Seconds()))
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
 			return
 		}
 		next.ServeHTTP(w, r)

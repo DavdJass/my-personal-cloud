@@ -3,6 +3,8 @@ import { useAuth } from "./auth";
 import { LoginPage } from "./pages/LoginPage";
 import { FilesPage } from "./pages/FilesPage";
 import { GalleryPage } from "./pages/GalleryPage";
+import { SharedPage } from "./pages/SharedPage";
+import { SharesPage } from "./pages/SharesPage";
 import { useTheme } from "./theme";
 import { ToastProvider } from "./toast";
 
@@ -29,6 +31,7 @@ function AppInner() {
   if (!user) {
     return (
       <Routes>
+        <Route path="/share/:token" element={<SharedPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -49,6 +52,9 @@ function AppInner() {
           <NavLink to="/gallery" className={({ isActive }) => (isActive ? "active" : "")}>
             Galería
           </NavLink>
+          <NavLink to="/shares" className={({ isActive }) => (isActive ? "active" : "")}>
+            Enlaces
+          </NavLink>
         </nav>
         <div className="user-block">
           <button
@@ -68,6 +74,7 @@ function AppInner() {
         <Routes>
           <Route path="/files" element={<FilesPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/shares" element={<SharesPage />} />
           <Route path="*" element={<Navigate to="/files" replace />} />
         </Routes>
       </main>

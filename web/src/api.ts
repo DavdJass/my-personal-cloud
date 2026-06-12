@@ -118,6 +118,20 @@ export interface TrashResponse {
   offset: number;
 }
 
+export interface ShareLink {
+  id: string;
+  user_id: number;
+  file_id?: string;
+  folder_id?: string;
+  url: string;
+  expires_at: string;
+  max_views: number;
+  current_views: number;
+  is_active: boolean;
+  created_at: string;
+  name: string;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>("/api/auth/login", {
@@ -233,6 +247,29 @@ export const api = {
 
   emptyTrash: () =>
     request<void>("/api/trash/empty", { method: "POST" }),
+
+  // ── Shares ──────────────────────────────────────────────────────────
+
+  createShare: (opts: {
+    file_id?: string;
+    folder_id?: string;
+    expires_in_hours?: number;
+    max_views?: number;
+  }) => request<ShareLink>("/api/shares", {
+    method: "POST",
+    body: JSON.stringify({
+      file_id: opts.file_id,
+      folder_id: opts.folder_id,
+      expires_in_hours: opts.expires_in_hours ?? 1,
+      max_views: opts.max_views ?? 0,
+    }),
+  }),
+
+  listShares: () =>
+    request<{ shares: ShareLink[] }>("/api/shares"),
+
+  revokeShare: (id: string) =>
+    request<void>(`/api/shares/${id}`, { method: "DELETE" }),
 };
 
 export function formatSize(bytes: number): string {

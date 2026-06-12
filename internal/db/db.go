@@ -92,6 +92,28 @@ func migrate(conn *sql.DB) error {
 				ALTER TABLE files ADD COLUMN deleted_at DATETIME;
 			`,
 		},
+		{
+			version: 3,
+			sql: `
+				CREATE TABLE IF NOT EXISTS share_links (
+					id             TEXT    PRIMARY KEY,
+					user_id        INTEGER NOT NULL,
+					file_id        TEXT,
+					folder_id      TEXT,
+					token          TEXT    NOT NULL UNIQUE,
+					expires_at     DATETIME NOT NULL,
+					max_views      INTEGER NOT NULL DEFAULT 0,
+					current_views  INTEGER NOT NULL DEFAULT 0,
+					is_active      INTEGER NOT NULL DEFAULT 1,
+					created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+					FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+					FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
+				);
+				CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links(token);
+				CREATE INDEX IF NOT EXISTS idx_share_links_user ON share_links(user_id);
+			`,
+		},
 	}
 
 	tx, err := conn.Begin()

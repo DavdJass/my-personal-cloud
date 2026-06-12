@@ -33,11 +33,14 @@ type Config struct {
 	JWTExpiry time.Duration
 
 	// MaxUploadBytes is the maximum size in bytes accepted for a single
-	// upload. Defaults to 10 GiB which is safe for most personal use.
+	// upload. Defaults to 500 MB.
 	MaxUploadBytes int64
 
-	// AllowOrigin is the CORS origin allowed by the API. Use "*" for fully
-	// open access during development.
+	// AllowOrigin is the CORS origin allowed by the API.
+	// In production, set this to your actual domain (e.g. "https://cloud.example.com").
+	// The wildcard "*" is only safe because we do not send credentials (cookies);
+	// authentication is done via the Authorization header. However, setting a
+	// specific origin is strongly recommended for production.
 	AllowOrigin string
 }
 
@@ -48,7 +51,7 @@ func Load() (*Config, error) {
 		StorageRoot:    env("CLOUD_STORAGE_ROOT", filepath.Join(".", "data", "storage")),
 		DatabasePath:   env("CLOUD_DB_PATH", filepath.Join(".", "data", "cloud.db")),
 		JWTExpiry:      24 * time.Hour,
-		MaxUploadBytes: 10 << 30, // 10 GiB
+		MaxUploadBytes: 500 << 20, // 500 MB
 		AllowOrigin:    env("CLOUD_CORS_ORIGIN", "*"),
 	}
 

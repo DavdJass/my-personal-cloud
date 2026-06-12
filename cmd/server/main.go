@@ -22,6 +22,7 @@ import (
 	"github.com/DavdJass/my-personal-cloud/internal/files"
 	"github.com/DavdJass/my-personal-cloud/internal/photos"
 	"github.com/DavdJass/my-personal-cloud/internal/ratelimit"
+	"github.com/DavdJass/my-personal-cloud/internal/shares"
 	"github.com/DavdJass/my-personal-cloud/internal/storage"
 	"github.com/DavdJass/my-personal-cloud/web"
 )
@@ -63,10 +64,19 @@ func main() {
 		slog.Error("photos service failed", "error", err)
 		os.Exit(1)
 	}
+	shareSvc := shares.NewService(conn, store)
 
 	// Rate limiter for login endpoint (5 attempts per minute per IP).
 	loginLimiter := ratelimit.New(5, 1*time.Minute)
 	defer loginLimiter.Stop()
+
+	// Rate limiter for general API endpoints (60 requests per minute per IP).
+	apiLimiter := ratelimit.New(60, 1*time.Minute)
+	defer apiLimiter.Stop()
+
+	// Rate limiter for file uploads (10 uploads per minute per IP).
+	uploadLimiter := ratelimit.New(10, 1*time.Minute)
+	defer uploadLimiter.Stop()
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
@@ -97,24 +107,34 @@ func main() {
 			protected.Post("/auth/refresh", authSvc.RefreshHandler)
 
 			protected.Get("/files", fileSvc.ListHandler)
-			protected.Get("/files/search", fileSvc.SearchHandler)
-			protected.Post("/files/upload", fileSvc.UploadHandler)
+			protected.With(apiLimiter.Middleware).Get("/files/search", fileSvc.SearchHandler)
+			protected.With(uploadLimiter.Middleware).Post("/files/upload", fileSvc.UploadHandler)
 			protected.Get("/files/{id}/download", fileSvc.DownloadHandler)
-			protected.Patch("/files/{id}", fileSvc.PatchFileHandler)
-			protected.Delete("/files/{id}", fileSvc.DeleteHandler)
+			protected.With(apiLimiter.Middleware).Patch("/files/{id}", fileSvc.PatchFileHandler)
+			protected.With(apiLimiter.Middleware).Delete("/files/{id}", fileSvc.DeleteHandler)
 			protected.Post("/files/{id}/restore", fileSvc.RestoreHandler)
 
-			protected.Post("/folders", fileSvc.CreateFolderHandler)
-			protected.Patch("/folders/{id}", fileSvc.PatchFolderHandler)
-			protected.Delete("/folders/{id}", fileSvc.DeleteFolderHandler)
+			protected.With(apiLimiter.Middleware).Post("/folders", fileSvc.CreateFolderHandler)
+			protected.With(apiLimiter.Middleware).Patch("/folders/{id}", fileSvc.PatchFolderHandler)
+			protected.With(apiLimiter.Middleware).Delete("/folders/{id}", fileSvc.DeleteFolderHandler)
 
 			protected.Get("/photos", photoSvc.ListHandler)
 			protected.Get("/photos/{id}/thumb", photoSvc.ThumbHandler)
 			protected.Get("/photos/{id}/full", photoSvc.FullHandler)
 
-			protected.Get("/trash", fileSvc.TrashHandler)
-			protected.Post("/trash/empty", fileSvc.EmptyTrashHandler)
+			protected.With(apiLimiter.Middleware).Get("/trash", fileSvc.TrashHandler)
+			protected.With(apiLimiter.Middleware).Post("/trash/empty", fileSvc.EmptyTrashHandler)
+
+			protected.Post("/shares", shareSvc.CreateHandler)
+			protected.Get("/shares", shareSvc.ListHandler)
+			protected.Delete("/shares/{id}", shareSvc.RevokeHandler)
 		})
+	})
+
+	// Public share route (no auth required) — under /api/public so the SPA
+	// can handle the /share/:token UI route without conflicts.
+	r.Route("/api/public", func(public chi.Router) {
+		public.Get("/share/{token}", shareSvc.PublicShareRouter)
 	})
 
 	// Serve the embedded React build for any non-/api path.
