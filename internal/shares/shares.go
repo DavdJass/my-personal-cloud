@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -270,7 +269,8 @@ func (s *Service) incrementViews(ctx context.Context, id string) {
 	)
 }
 
-// PublicFileHandler handles GET /share/{token} for a file share.
+// PublicFileHandler handles GET /api/public/share/{token} for a file share.
+// Returns JSON metadata; the SPA uses ?content=1 for inline streaming.
 func (s *Service) PublicFileHandler(w http.ResponseWriter, r *http.Request) {
 	si, err := s.resolveShare(r.Context(), chi.URLParam(r, "token"))
 	if err != nil {
@@ -301,31 +301,7 @@ func (s *Service) PublicFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	s.incrementViews(r.Context(), si.shareID)
 
-	inline := r.URL.Query().Get("inline") == "1"
-	if inline || strings.HasPrefix(f.MimeType, "image/") || strings.HasPrefix(f.MimeType, "video/") {
-		// Stream inline for media
-		var storagePath string
-		err := s.db.QueryRowContext(r.Context(),
-			`SELECT storage_path FROM files WHERE id = ?`, *si.fileID,
-		).Scan(&storagePath)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "storage lookup failed")
-			return
-		}
-		file, err := s.store.Open(storagePath)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "open failed")
-			return
-		}
-		defer file.Close()
-
-		w.Header().Set("Content-Type", f.MimeType)
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", f.SizeBytes))
-		http.ServeContent(w, r, f.Name, time.Time{}, file)
-		return
-	}
-
-	// Return file metadata as JSON (for download links in the UI)
+	// Return file metadata as JSON (SPA renders the preview)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"type":       "file",
 		"file":       f,
@@ -420,9 +396,11 @@ func (s *Service) PublicFolderHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PublicShareRouter handles both file and folder shares via a single endpoint
-// that inspects the share target and redirects accordingly.
-// It also supports ?file_id=X for downloading individual files within a shared folder.
+// PublicShareRouter handles both file and folder shares via a single endpoint.
+// It always returns JSON metadata so the SPA can render the UI.
+// For inline content (image/video streaming), use ?content=1.
+// For downloading specific files within a shared folder, use ?file_id=X.
+// For inline preview of a file within a shared folder, use ?file_id=X&preview=1.
 func (s *Service) PublicShareRouter(w http.ResponseWriter, r *http.Request) {
 	si, err := s.resolveShare(r.Context(), chi.URLParam(r, "token"))
 	if err != nil {
@@ -430,13 +408,24 @@ func (s *Service) PublicShareRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If downloading a specific file within a shared folder
-	if fileID := r.URL.Query().Get("file_id"); fileID != "" && si.folderID != nil {
-		s.streamSharedFile(w, r, fileID, si)
+	// Raw content streaming (for <img>, <video>, downloads)
+	if r.URL.Query().Get("content") == "1" {
+		if si.fileID != nil {
+			s.streamSharedFile(w, r, *si.fileID, si, r.URL.Query().Get("preview") == "1")
+		} else {
+			writeJSONError(w, http.StatusBadRequest, "folder shares use ?file_id=X to stream a file")
+		}
 		return
 	}
 
-	// Dispatch
+	// Download a specific file within a shared folder
+	if fileID := r.URL.Query().Get("file_id"); fileID != "" && si.folderID != nil {
+		preview := r.URL.Query().Get("preview") == "1"
+		s.streamSharedFile(w, r, fileID, si, preview)
+		return
+	}
+
+	// Return JSON metadata
 	if si.fileID != nil {
 		s.PublicFileHandler(w, r)
 	} else if si.folderID != nil {
@@ -447,7 +436,8 @@ func (s *Service) PublicShareRouter(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamSharedFile streams a file by ID within a shared folder context.
-func (s *Service) streamSharedFile(w http.ResponseWriter, r *http.Request, fileID string, si *shareInfo) {
+// If preview is true, it forces inline content-type streaming.
+func (s *Service) streamSharedFile(w http.ResponseWriter, r *http.Request, fileID string, si *shareInfo, preview bool) {
 	var f PublicFile
 	var isImage int
 	err := s.db.QueryRowContext(r.Context(),
@@ -484,6 +474,9 @@ func (s *Service) streamSharedFile(w http.ResponseWriter, r *http.Request, fileI
 
 	w.Header().Set("Content-Type", f.MimeType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", f.SizeBytes))
+	if preview {
+		w.Header().Set("Content-Disposition", "inline")
+	}
 	http.ServeContent(w, r, f.Name, time.Time{}, file)
 }
 
