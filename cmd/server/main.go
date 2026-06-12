@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +20,6 @@ import (
 	"github.com/DavdJass/my-personal-cloud/internal/config"
 	"github.com/DavdJass/my-personal-cloud/internal/db"
 	"github.com/DavdJass/my-personal-cloud/internal/files"
-	"github.com/DavdJass/my-personal-cloud/internal/logger"
 	"github.com/DavdJass/my-personal-cloud/internal/photos"
 	"github.com/DavdJass/my-personal-cloud/internal/ratelimit"
 	"github.com/DavdJass/my-personal-cloud/internal/storage"
@@ -27,18 +27,20 @@ import (
 )
 
 func main() {
-	// Structured logging — set to stderr as a simple text format.
-	logger.SetDefault(logger.New(os.Stderr, logger.LevelInfo))
+	// Structured logging.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
 
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("config load failed", "error", err)
+		slog.Error("config load failed", "error", err)
 		os.Exit(1)
 	}
 
 	conn, err := db.Open(cfg.DatabasePath)
 	if err != nil {
-		logger.Error("database open failed", "error", err)
+		slog.Error("database open failed", "error", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
@@ -48,17 +50,17 @@ func main() {
 	// Bootstrap an initial admin account from env vars on first run.
 	if u, p := os.Getenv("CLOUD_ADMIN_USER"), os.Getenv("CLOUD_ADMIN_PASS"); u != "" && p != "" {
 		if err := authSvc.EnsureUser(context.Background(), u, p); err != nil {
-			logger.Error("bootstrap admin failed", "error", err)
+			slog.Error("bootstrap admin failed", "error", err)
 			os.Exit(1)
 		}
-		logger.Info("admin user ensured", "username", u)
+		slog.Info("admin user ensured", "username", u)
 	}
 
 	store := storage.New(cfg.StorageRoot)
 	fileSvc := files.NewService(conn, store, cfg.MaxUploadBytes)
 	photoSvc, err := photos.NewService(conn, store, cfg.StorageRoot)
 	if err != nil {
-		logger.Error("photos service failed", "error", err)
+		slog.Error("photos service failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -118,7 +120,7 @@ func main() {
 	// Serve the embedded React build for any non-/api path.
 	uiFS, err := web.UI()
 	if err != nil {
-		logger.Warn("frontend not embedded, API-only mode", "error", err)
+		slog.Warn("frontend not embedded, API-only mode", "error", err)
 	} else {
 		r.Handle("/*", spaHandler(uiFS))
 	}
@@ -130,13 +132,13 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("server starting",
+		slog.Info("server starting",
 			"addr", cfg.Addr,
 			"storage", cfg.StorageRoot,
 			"database", cfg.DatabasePath,
 		)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("server error", "error", err)
+			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -145,11 +147,11 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	logger.Info("shutting down...")
+	slog.Info("shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
-	logger.Info("server stopped")
+	slog.Info("server stopped")
 }
 
 // spaHandler serves static files from fsys and falls back to index.html for

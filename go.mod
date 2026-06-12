@@ -1,6 +1,6 @@
 module github.com/DavdJass/my-personal-cloud
 
-go 1.19
+go 1.22
 
 require (
 	github.com/disintegration/imaging v1.6.2
