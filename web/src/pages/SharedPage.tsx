@@ -106,7 +106,10 @@ export function SharedPage() {
   return (
     <div className="shared-page">
       <div className="shared-header">
-        <span className="shared-logo">My Personal Cloud</span>
+        <div className="shared-brand">
+          <span className="brand-mark" style={{ width: 28, height: 28, fontSize: 12 }}>~</span>
+          <span className="shared-title">My Personal Cloud</span>
+        </div>
         <span className="shared-header-muted">contenido compartido</span>
       </div>
 

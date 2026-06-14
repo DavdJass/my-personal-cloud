@@ -101,9 +101,12 @@ export function BackupPage() {
         <h2>Copia de seguridad</h2>
       </div>
 
+      {/* ── Create / Restore side by side ── */}
+      <div className="backup-section">
+
       {/* ── Create ── */}
       <div className="backup-card">
-        <h3>Crear backup</h3>
+        <h3>📦 Crear backup</h3>
         <p className="muted">
           Genera un archivo cifrado con toda tu nube: base de datos y archivos.
         </p>
@@ -147,7 +150,7 @@ export function BackupPage() {
 
       {/* ── Restore ── */}
       <div className="backup-card">
-        <h3>Restaurar backup</h3>
+        <h3>♻️ Restaurar backup</h3>
         <p className="muted">
           Sube un archivo <code>.mpcbackup</code> para restaurar tu nube.
           Los datos actuales serán reemplazados.
@@ -198,6 +201,7 @@ export function BackupPage() {
 
         {restoreError && <div className="error">{restoreError}</div>}
         {restoreMsg && <div className="success-msg">{restoreMsg}</div>}
+      </div>
       </div>
     </div>
   );

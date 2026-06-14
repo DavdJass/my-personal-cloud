@@ -17,34 +17,20 @@ export default function App() {
   );
 }
 
-function AppInner() {
-  const { user, loading, logout } = useAuth();
+function AppRoutes() {
+  const { user, logout } = useAuth();
   const { toggle, isDark } = useTheme();
 
-  if (loading) {
-    return (
-      <div className="splash">
-        <div className="spinner" />
-      </div>
-    );
-  }
-
   if (!user) {
-    return (
-      <Routes>
-        <Route path="/share/:token" element={<SharedPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
+    return <Navigate to="/login" replace />;
   }
 
   return (
     <div className="app">
       <header className="app-header">
         <div className="brand">
-          <span className="brand-mark">/</span>
-          <span>My Personal Cloud</span>
+          <span className="brand-mark">~</span>
+          <span>My Cloud</span>
         </div>
         <nav className="app-nav">
           <NavLink to="/files" className={({ isActive }) => (isActive ? "active" : "")}>
@@ -66,10 +52,11 @@ function AppInner() {
             onClick={toggle}
             title={isDark ? "Activar modo claro" : "Activar modo oscuro"}
           >
-            {isDark ? "\u2600" : "\u{1F319}"}
+            {isDark ? "\u2600\uFE0F" : "\u{1F319}"}
           </button>
+          <span className="user-avatar">{user.username.charAt(0).toUpperCase()}</span>
           <span className="user-name">{user.username}</span>
-          <button className="btn btn-ghost" onClick={logout}>
+          <button className="btn btn-ghost btn-sm" onClick={logout}>
             Salir
           </button>
         </div>
@@ -85,4 +72,66 @@ function AppInner() {
       </main>
     </div>
   );
+}
+
+function AppInner() {
+  const { loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="splash">
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      {/*
+        Share page renders standalone (no app chrome) so it works
+        whether the user is logged in or not.
+      */}
+      <Route path="/share/:token" element={<SharedPage />} />
+
+      {/*
+        Login page — redirect to files if already authenticated.
+      */}
+      <Route
+        path="/login"
+        element={
+          <ProtectedRoute redirectTo="/files" inverted>
+            <LoginPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/*
+        Everything else: app chrome if authenticated, else redirect to login.
+      */}
+      <Route path="/*" element={<AppRoutes />} />
+    </Routes>
+  );
+}
+
+/** Wraps children with auth guard.
+ *  - normal mode: redirects to `redirectTo` if NOT authenticated.
+ *  - inverted mode (for login): redirects if IS authenticated.
+ */
+function ProtectedRoute({
+  children,
+  redirectTo,
+  inverted,
+}: {
+  children: React.ReactNode;
+  redirectTo: string;
+  inverted?: boolean;
+}) {
+  const { user } = useAuth();
+  const authed = !!user;
+
+  if (inverted ? authed : !authed) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  return <>{children}</>;
 }

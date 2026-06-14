@@ -51,7 +51,10 @@ export function SharesPage() {
   };
 
   const isExpired = (share: ShareLink) => {
-    return new Date(share.expires_at) < new Date();
+    if (!share.is_active) return true;
+    if (new Date(share.expires_at) < new Date()) return true;
+    if (share.max_views > 0 && share.current_views >= share.max_views) return true;
+    return false;
   };
 
   return (
@@ -81,7 +84,7 @@ export function SharesPage() {
             >
               <div className="share-card-header">
                 <span className="share-name">{share.name || "Sin nombre"}</span>
-                <span className={`share-badge ${share.is_active ? "active" : "revoked"}`}>
+                <span className={`share-badge ${isExpired(share) ? "revoked" : "active"}`}>
                   {!share.is_active ? "Revocado" : isExpired(share) ? "Expirado" : "Activo"}
                 </span>
               </div>

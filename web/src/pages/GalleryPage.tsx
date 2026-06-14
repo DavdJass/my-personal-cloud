@@ -70,6 +70,7 @@ export function GalleryPage() {
         <div className="empty">Cargando...</div>
       ) : photos.length === 0 ? (
         <div className="empty">
+          <div className="empty-icon">🖼️</div>
           <p>No hay fotos en tu nube.</p>
           <p className="muted">
             Sube imágenes desde la pestaña &ldquo;Archivos&rdquo; y aparecerán aquí.
@@ -110,6 +111,18 @@ export function GalleryPage() {
             onClick={(e) => e.stopPropagation()}
           />
           <div className="lightbox-caption">{active.name}</div>
+          <div style={{ position: "absolute", bottom: 16, display: "flex", gap: 8 }}>
+            <a
+              className="btn btn-ghost btn-sm"
+              href={api.downloadUrl(active.id)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)" }}
+            >
+              Descargar
+            </a>
+          </div>
           <button className="lightbox-close" onClick={() => setActive(null)}>
             Cerrar
           </button>

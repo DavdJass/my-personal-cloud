@@ -24,8 +24,15 @@ export function LoginPage() {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={onSubmit}>
-        <h1>My Personal Cloud</h1>
-        <p className="login-sub">Tus archivos. Tu hardware. Tu nube.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+          <span className="brand-mark" style={{ width: 40, height: 40, fontSize: 18 }}>~</span>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 20 }}>My Cloud</h1>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--muted)" }}>
+              Tus archivos. Tu hardware. Tu nube.
+            </p>
+          </div>
+        </div>
 
         <label className="field">
           <span>Usuario</span>
@@ -33,6 +40,7 @@ export function LoginPage() {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            placeholder="Ingresa tu usuario"
             autoFocus
             required
           />
@@ -44,14 +52,22 @@ export function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder="Ingresa tu contraseña"
             required
           />
         </label>
 
         {error && <div className="error">{error}</div>}
 
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? "Entrando..." : "Entrar"}
+        <button type="submit" className="btn btn-primary" disabled={busy} style={{ marginTop: 4 }}>
+          {busy ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+              Entrando...
+            </span>
+          ) : (
+            "Entrar"
+          )}
         </button>
       </form>
     </div>

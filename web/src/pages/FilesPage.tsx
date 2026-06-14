@@ -800,7 +800,11 @@ export function FilesPage() {
           </button>
         </div>
         {allResults.length === 0 ? (
-          <div className="empty"><p>Sin resultados.</p></div>
+          <div className="empty">
+            <div className="empty-icon">🔍</div>
+            <p>Sin resultados para &ldquo;{searchQuery}&rdquo;.</p>
+            <p className="muted">Prueba con otro término de búsqueda.</p>
+          </div>
         ) : (
           <div className="file-table">
             {allResults.map((item: any) => (
@@ -915,6 +919,7 @@ export function FilesPage() {
         <div className="empty">Cargando...</div>
       ) : isEmpty ? (
         <div className="empty">
+          <div className="empty-icon">📂</div>
           <p>Esta carpeta está vacía.</p>
           <p className="muted">Crea una carpeta o sube archivos para empezar.</p>
         </div>
