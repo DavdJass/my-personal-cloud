@@ -18,9 +18,13 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o my-personal-cloud ./cmd/server
 # ── Stage 3: Minimal runtime image ──
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
-RUN adduser -D -H -h /data cloud
 
-# Use /data as working directory — it's the cloud user's home and writable.
+# Create the cloud user and the /data directory with correct ownership.
+RUN adduser -D -H cloud && \
+    mkdir -p /data && \
+    chown cloud:cloud /data
+
+# Use /data as working directory — writable by cloud user.
 # Railway / Docker volumes mount here for persistence.
 WORKDIR /data
 
