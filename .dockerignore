@@ -1,0 +1,35 @@
+# Git
+.git/
+.gitignore
+
+# Node / frontend (local node_modules only, not source)
+node_modules/
+web/node_modules/
+
+# Go
+*.exe
+*.exe~
+*.test
+*.out
+tmp/
+
+# Data (don't copy local data into the build context)
+data/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker config files (not needed for build context)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Environment
+.env
+.env.*

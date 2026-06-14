@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  cloud:
+    build: .
+    container_name: my-personal-cloud
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - CLOUD_ADDR=:8080
+      - CLOUD_JWT_SECRET=${CLOUD_JWT_SECRET}
+      - CLOUD_ADMIN_USER=${CLOUD_ADMIN_USER}
+      - CLOUD_ADMIN_PASS=${CLOUD_ADMIN_PASS}
+      - CLOUD_CORS_ORIGIN=${CLOUD_CORS_ORIGIN:-https://cloud.example.com}
+      - CLOUD_STORAGE_ROOT=/data/storage
+      - CLOUD_DB_PATH=/data/cloud.db
+      - CLOUD_MAX_UPLOAD_MB=${CLOUD_MAX_UPLOAD_MB:-500}
+      - CLOUD_JWT_EXPIRY_HOURS=${CLOUD_JWT_EXPIRY_HOURS:-24}
+    volumes:
+      - cloud-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional: Caddy reverse proxy with automatic HTTPS.
+  # If you don't need it (e.g. Railway handles TLS), comment or remove this block.
+  # For Docker, Caddy needs Caddyfile.docker (proxies to "cloud:8080").
+  #   cp Caddyfile.docker Caddyfile   (before docker compose up)
+  caddy:
+    image: caddy:2-alpine
+    container_name: cloud-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - cloud
+
+volumes:
+  cloud-data:
+  caddy-data:
+  caddy-config:

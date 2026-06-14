@@ -1,5 +1,9 @@
 # Caddyfile - reverse proxy in front of the Go server.
 #
+# For Docker Compose: use Caddyfile.docker instead (proxies to "cloud:8080"
+# instead of "127.0.0.1:8080"). Copy it over this file or mount it:
+#   cp Caddyfile.docker Caddyfile
+#
 # Two common deployment modes:
 #
 #   1) LAN-only with self-signed cert (default below). Replace `cloud.local`

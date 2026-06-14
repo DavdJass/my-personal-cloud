@@ -1,0 +1,47 @@
+# Caddyfile for Docker Compose deployment.
+# Proxies to the "cloud" service (container name), not localhost.
+# Copy or symlink to Caddyfile when using Docker:
+#   cp Caddyfile.docker Caddyfile
+# Or mount it directly in docker-compose by changing the volume path.
+
+{
+}
+
+# --- LAN access via mDNS / hostname (self-signed) ---
+cloud.local {
+  tls internal
+  encode zstd gzip
+
+  request_body {
+    max_size 500MB
+  }
+
+  reverse_proxy cloud:8080 {
+    flush_interval -1
+  }
+}
+
+# --- Public domain with Let's Encrypt ---
+# cloud.example.com {
+#   encode zstd gzip
+#   request_body {
+#     max_size 500MB
+#   }
+#   reverse_proxy cloud:8080 {
+#     flush_interval -1
+#   }
+# }
+
+# --- Tailscale ---
+# https://cloud.your-tailnet.ts.net {
+#   tls {
+#     get_certificate tailscale
+#   }
+#   encode zstd gzip
+#   request_body {
+#     max_size 500MB
+#   }
+#   reverse_proxy cloud:8080 {
+#     flush_interval -1
+#   }
+# }
