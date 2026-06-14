@@ -20,9 +20,18 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 RUN adduser -D -H -h /data cloud
 
-WORKDIR /app
-COPY --from=backend /build/my-personal-cloud .
+# Use /data as working directory — it's the cloud user's home and writable.
+# Railway / Docker volumes mount here for persistence.
+WORKDIR /data
 
+COPY --from=backend /build/my-personal-cloud /usr/local/bin/my-personal-cloud
+
+# Default paths point to /data (the mounted volume).
+# Override any of these via environment variables or docker-compose.
+ENV CLOUD_STORAGE_ROOT=/data/storage
+ENV CLOUD_DB_PATH=/data/cloud.db
+
+# The cloud user can write to /data but not to /
 USER cloud
 
 # The server listens on :8080 by default.
@@ -33,4 +42,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:8080/api/health || exit 1
 
-ENTRYPOINT ["./my-personal-cloud"]
+ENTRYPOINT ["my-personal-cloud"]
