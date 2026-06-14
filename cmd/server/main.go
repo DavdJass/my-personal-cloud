@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/DavdJass/my-personal-cloud/internal/auth"
+	"github.com/DavdJass/my-personal-cloud/internal/backup"
 	"github.com/DavdJass/my-personal-cloud/internal/config"
 	"github.com/DavdJass/my-personal-cloud/internal/db"
 	"github.com/DavdJass/my-personal-cloud/internal/files"
@@ -44,9 +46,11 @@ func main() {
 		slog.Error("database open failed", "error", err)
 		os.Exit(1)
 	}
-	defer conn.Close()
 
-	authSvc := auth.NewService(conn, cfg.JWTSecret, cfg.JWTExpiry)
+	// Wrap DB in a holder so the backup service can replace it transparently.
+	dbh := backup.NewDBHolder(conn)
+
+	authSvc := auth.NewService(dbh.DB(), cfg.JWTSecret, cfg.JWTExpiry)
 
 	// Bootstrap an initial admin account from env vars on first run.
 	if u, p := os.Getenv("CLOUD_ADMIN_USER"), os.Getenv("CLOUD_ADMIN_PASS"); u != "" && p != "" {
@@ -58,13 +62,19 @@ func main() {
 	}
 
 	store := storage.New(cfg.StorageRoot)
-	fileSvc := files.NewService(conn, store, cfg.MaxUploadBytes)
-	photoSvc, err := photos.NewService(conn, store, cfg.StorageRoot)
+	fileSvc := files.NewService(dbh.DB(), store, cfg.MaxUploadBytes)
+	photoSvc, err := photos.NewService(dbh.DB(), store, cfg.StorageRoot)
 	if err != nil {
 		slog.Error("photos service failed", "error", err)
 		os.Exit(1)
 	}
-	shareSvc := shares.NewService(conn, store)
+	shareSvc := shares.NewService(dbh.DB(), store)
+	backupSvc := backup.NewService(dbh, store, cfg.JWTSecret, cfg.DatabasePath)
+
+	// Restart channel: when backup restore completes, the server restarts
+	// so all services pick up the new database connection.
+	restartCh := make(chan struct{}, 1)
+	backupSvc.RestartCh = restartCh
 
 	// Rate limiter for login endpoint (5 attempts per minute per IP).
 	loginLimiter := ratelimit.New(5, 1*time.Minute)
@@ -128,6 +138,10 @@ func main() {
 			protected.Post("/shares", shareSvc.CreateHandler)
 			protected.Get("/shares", shareSvc.ListHandler)
 			protected.Delete("/shares/{id}", shareSvc.RevokeHandler)
+
+			// Backup (authenticated).
+			protected.Post("/backup/create", backupSvc.CreateHandler)
+			protected.Post("/backup/restore", backupSvc.RestoreHandler)
 		})
 	})
 
@@ -165,12 +179,36 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
 
-	slog.Info("shutting down...")
+	select {
+	case <-stop:
+		slog.Info("shutting down...")
+	case <-restartCh:
+		slog.Info("restarting server...")
+		// Shutdown the HTTP server and DB gracefully, then re-exec.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = srv.Shutdown(ctx)
+		cancel()
+		if err := dbh.DB().Close(); err != nil {
+			slog.Error("close database", "error", err)
+		}
+		cmd := exec.Command(os.Args[0], os.Args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			slog.Error("restart failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("restarted — new PID", "pid", cmd.Process.Pid)
+		os.Exit(0)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
+	if err := dbh.DB().Close(); err != nil {
+		slog.Error("close database", "error", err)
+	}
 	slog.Info("server stopped")
 }
 

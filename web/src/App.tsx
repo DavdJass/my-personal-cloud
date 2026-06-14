@@ -5,6 +5,7 @@ import { FilesPage } from "./pages/FilesPage";
 import { GalleryPage } from "./pages/GalleryPage";
 import { SharedPage } from "./pages/SharedPage";
 import { SharesPage } from "./pages/SharesPage";
+import { BackupPage } from "./pages/BackupPage";
 import { useTheme } from "./theme";
 import { ToastProvider } from "./toast";
 
@@ -55,6 +56,9 @@ function AppInner() {
           <NavLink to="/shares" className={({ isActive }) => (isActive ? "active" : "")}>
             Enlaces
           </NavLink>
+          <NavLink to="/backup" className={({ isActive }) => (isActive ? "active" : "")}>
+            Backup
+          </NavLink>
         </nav>
         <div className="user-block">
           <button
@@ -75,6 +79,7 @@ function AppInner() {
           <Route path="/files" element={<FilesPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
           <Route path="/shares" element={<SharesPage />} />
+          <Route path="/backup" element={<BackupPage />} />
           <Route path="*" element={<Navigate to="/files" replace />} />
         </Routes>
       </main>

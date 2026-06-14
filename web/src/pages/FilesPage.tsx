@@ -15,7 +15,7 @@ function joinPath(parent: string, name: string): string {
 }
 
 function breadcrumbSegments(p: string): { label: string; path: string }[] {
-  const segs = [{ label: "Ra\u00edz", path: "/" }];
+  const segs = [{ label: "Raíz", path: "/" }];
   if (p === "/") return segs;
   const parts = p.replace(/^\//, "").split("/");
   let acc = "";
@@ -51,7 +51,7 @@ function CreateFolderModal({ onConfirm, onClose }: CreateFolderModalProps) {
   function handleConfirm() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("El nombre no puede estar vac\u00edo");
+      setError("El nombre no puede estar vacío");
       return;
     }
     onConfirm(trimmed);
@@ -122,7 +122,7 @@ function MoveModal({ label, currentPath, onConfirm, onClose }: MoveModalProps) {
   }
 
   function segs(p: string) {
-    const parts = [{ label: "Ra\u00edz", path: "/" }];
+    const parts = [{ label: "Raíz", path: "/" }];
     if (p === "/") return parts;
     const split = p.replace(/^\//, "").split("/");
     let acc = "";
@@ -143,7 +143,7 @@ function MoveModal({ label, currentPath, onConfirm, onClose }: MoveModalProps) {
         <nav className="move-breadcrumb">
           {browsePath !== "/" && (
             <button className="btn btn-ghost btn-xs move-up-btn" onClick={goUp} title="Subir">
-              {"\u2191"}
+              {"↑"}
             </button>
           )}
           {segs(browsePath).map((s, i) => (
@@ -174,7 +174,7 @@ function MoveModal({ label, currentPath, onConfirm, onClose }: MoveModalProps) {
                   setBrowsePath(next);
                 }}
               >
-                <span className="file-icon">{"\uD83D\uDCC1"}</span>
+                <span className="file-icon">{"📁"}</span>
                 <span>{f.name}</span>
               </button>
             ))
@@ -184,7 +184,7 @@ function MoveModal({ label, currentPath, onConfirm, onClose }: MoveModalProps) {
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={() => onConfirm(browsePath)}>
-            Mover aqu\u00ed
+            Mover aquí
           </button>
         </div>
       </div>
@@ -231,7 +231,7 @@ function RenameInline({ initial, onConfirm, onCancel }: RenameInlineProps) {
           onCancel();
         }}
       >
-        {"\u2715"}
+        {"✕"}
       </button>
     </span>
   );
@@ -317,7 +317,7 @@ function SortControls({ field, dir, onChange }: SortControlsProps) {
   const cols: { key: SortField; label: string }[] = [
     { key: "name", label: "Nombre" },
     { key: "mime_type", label: "Tipo" },
-    { key: "size_bytes", label: "Tama\u00f1o" },
+    { key: "size_bytes", label: "Tamaño" },
     { key: "created_at", label: "Fecha" },
   ];
 
@@ -336,7 +336,7 @@ function SortControls({ field, dir, onChange }: SortControlsProps) {
           }}
         >
           {c.label}
-          {field === c.key && <span className="sort-arrow">{dir === "asc" ? " \u2191" : " \u2193"}</span>}
+          {field === c.key && <span className="sort-arrow">{dir === "asc" ? " ↑" : " ↓"}</span>}
         </div>
       ))}
       <div></div>
@@ -381,7 +381,7 @@ function TrashView({ onBack }: { onBack: () => void }) {
         <h2>Papelera</h2>
         <div className="actions">
           <button className="btn btn-ghost" onClick={onBack}>
-            {"\u2190"} Volver
+            {"←"} Volver
           </button>
           {files.length > 0 && (
             <button className="btn btn-danger" onClick={async () => {
@@ -402,20 +402,20 @@ function TrashView({ onBack }: { onBack: () => void }) {
       {loading ? (
         <div className="empty">Cargando...</div>
       ) : files.length === 0 ? (
-        <div className="empty"><p>La papelera est\u00e1 vac\u00eda.</p></div>
+        <div className="empty"><p>La papelera está vacía.</p></div>
       ) : (
         <div className="file-table">
           <div className="file-row file-head">
             <div>Nombre</div>
             <div>Ruta original</div>
             <div>Eliminado</div>
-            <div>Tama\u00f1o</div>
+            <div>Tamaño</div>
             <div></div>
           </div>
           {files.map((f) => (
             <div className="file-row" key={f.id}>
               <div className="file-name">
-                <span className="file-icon">{f.is_image ? "\uD83D\uDDBC" : "\uD83D\uDCC4"}</span>
+                <span className="file-icon">{f.is_image ? "🖼️" : "📄"}</span>
                 <span>{f.name}</span>
               </div>
               <div className="muted">{f.parent_path}</div>
@@ -715,7 +715,7 @@ export function FilesPage() {
   }
 
   async function onDeleteFolder(id: string, name: string) {
-    if (!confirm(`\u00bfEliminar la carpeta "${name}" y todo su contenido?`)) return;
+    if (!confirm(`¿Eliminar la carpeta "${name}" y todo su contenido?`)) return;
     try {
       await api.deleteFolder(id);
       setFolders((prev) => prev.filter((f) => f.id !== id));
@@ -728,7 +728,7 @@ export function FilesPage() {
   // ── batch delete ──
   async function batchDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`\u00bfEliminar ${selected.size} elemento(s)?`)) return;
+    if (!confirm(`¿Eliminar ${selected.size} elemento(s)?`)) return;
     let ok = 0;
     for (const id of selected) {
       // Check if it's a file or folder.
@@ -794,9 +794,9 @@ export function FilesPage() {
     return (
       <div className="page">
         <div className="page-header">
-          <h2>B\u00fasqueda: &ldquo;{searchQuery}&rdquo;</h2>
+          <h2>Búsqueda: &ldquo;{searchQuery}&rdquo;</h2>
           <button className="btn btn-ghost" onClick={() => { setSearchQuery(""); setSearchResults(null); }}>
-            {"\u2715"} Limpiar
+            {"✕"} Limpiar
           </button>
         </div>
         {allResults.length === 0 ? (
@@ -806,7 +806,7 @@ export function FilesPage() {
             {allResults.map((item: any) => (
               <div className="file-row" key={item.id}>
                 <div className="file-name">
-                  <span className="file-icon">{item.mime_type === "inode/directory" ? "\uD83D\uDCC1" : "\uD83D\uDCC4"}</span>
+                  <span className="file-icon">{item.mime_type === "inode/directory" ? "📁" : "📄"}</span>
                   <span>{item.name}</span>
                 </div>
                 <div className="muted">{item.parent_path}</div>
@@ -846,9 +846,9 @@ export function FilesPage() {
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}
-            title={viewMode === "list" ? "Vista cuadr\u00edcula" : "Vista lista"}
+            title={viewMode === "list" ? "Vista cuadrícula" : "Vista lista"}
           >
-            {viewMode === "list" ? "\u2630" : "\u25A6"}
+            {viewMode === "list" ? "☰" : "▦"}
           </button>
 
           <button className="btn btn-ghost" onClick={() => setShowTrash(true)}>
@@ -915,7 +915,7 @@ export function FilesPage() {
         <div className="empty">Cargando...</div>
       ) : isEmpty ? (
         <div className="empty">
-          <p>Esta carpeta est\u00e1 vac\u00eda.</p>
+          <p>Esta carpeta está vacía.</p>
           <p className="muted">Crea una carpeta o sube archivos para empezar.</p>
         </div>
       ) : viewMode === "grid" ? (
@@ -949,7 +949,7 @@ export function FilesPage() {
               }}
               onClick={() => navigate(joinPath(folder.parent_path, folder.name))}
             >
-              <div className="grid-icon folder-big">\uD83D\uDCC1</div>
+              <div className="grid-icon folder-big">📁</div>
               <div className="grid-name">{folder.name}</div>
             </div>
           )})}
@@ -976,9 +976,9 @@ export function FilesPage() {
               {isImageMime(f.mime_type) ? (
                 <img src={api.thumbUrl(f.id, 200)} alt={f.name} className="grid-thumb" />
               ) : isVideoMime(f.mime_type) ? (
-                <div className="grid-icon">\uD83C\uDFA5</div>
+                <div className="grid-icon">🎥</div>
               ) : (
-                <div className="grid-icon">\uD83D\uDCC4</div>
+                <div className="grid-icon">📄</div>
               )}
               <div className="grid-name">{f.name}</div>
             </div>
@@ -1029,7 +1029,7 @@ export function FilesPage() {
                     />
                   ) : null}
                   <span className="file-icon">
-                    {item._kind === "folder" ? "\uD83D\uDCC1" : item.mime_type?.startsWith("video/") ? "\uD83C\uDFA5" : item.is_image ? "\uD83D\uDDBC" : "\uD83D\uDCC4"}
+                    {item._kind === "folder" ? "📁" : item.mime_type?.startsWith("video/") ? "🎥" : item.is_image ? "🖼️" : "📄"}
                   </span>
                   {item._kind === "folder" ? (
                     renaming?.id === item.id ? (
@@ -1069,7 +1069,7 @@ export function FilesPage() {
                   )}
                 </div>
                 <div className="muted file-mime">{item.mime_type === "inode/directory" ? "Carpeta" : item.mime_type}</div>
-                <div>{item._kind === "folder" ? "\u2014" : formatSize(item.size_bytes)}</div>
+                <div>{item._kind === "folder" ? "—" : formatSize(item.size_bytes)}</div>
                 <div className="muted">{formatDate(item.created_at)}</div>
                 <div className="file-actions">
                   {item._kind === "file" && (
@@ -1135,17 +1135,17 @@ export function FilesPage() {
                 disabled={page === 0}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
               >
-                {"\u2190"} Anterior
+                {"←"} Anterior
               </button>
               <span className="muted">
-                P\u00e1gina {page + 1} de {Math.ceil(totalItems / pageSize)}
+                Página {page + 1} de {Math.ceil(totalItems / pageSize)}
               </span>
               <button
                 className="btn btn-ghost btn-sm"
                 disabled={(page + 1) * pageSize >= totalItems}
                 onClick={() => setPage((p) => p + 1)}
               >
-                Siguiente {"\u2192"}
+                Siguiente {"→"}
               </button>
             </div>
           )}

@@ -72,7 +72,7 @@ export function GalleryPage() {
         <div className="empty">
           <p>No hay fotos en tu nube.</p>
           <p className="muted">
-            Sube im\u00e1genes desde la pesta\u00f1a &ldquo;Archivos&rdquo; y aparecer\u00e1n aqu\u00ed.
+            Sube imágenes desde la pestaña &ldquo;Archivos&rdquo; y aparecerán aquí.
           </p>
         </div>
       ) : (

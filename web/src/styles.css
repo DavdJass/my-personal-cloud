@@ -908,6 +908,77 @@ a {
   .search-input { min-width: 100%; }
 }
 
+/* === Backup page === */
+.backup-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow);
+}
+.backup-card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.backup-card .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.backup-card .field span {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.backup-card .field input[type="text"],
+.backup-card .field input[type="file"] {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.backup-card .field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.backup-card .btn { align-self: flex-start; }
+.backup-card .error,
+.backup-card .success-msg {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.success-msg {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: var(--success);
+}
+.checkbox-field {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  cursor: pointer;
+}
+.checkbox-field input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.backup-warning {
+  padding: 10px 14px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  color: var(--warning);
+  font-size: 14px;
+}
+
 /* === Share Dialog === */
 .share-result p { margin-bottom: 8px; }
 .share-url-box {

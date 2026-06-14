@@ -91,3 +91,8 @@ func (s *LocalStore) abs(rel string) string {
 	}
 	return cleaned
 }
+
+// Root returns the root directory of the store.
+func (s *LocalStore) Root() string {
+	return s.root
+}
